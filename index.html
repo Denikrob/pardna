@@ -1,0 +1,2348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1"/>
+<title>Pardna</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100vh; background: #1a0a0a; }
+#root { min-height: 100vh; }
+:root { --app-max-w: 420px; --pad: 20px; }
+@media (min-width: 768px) {
+  :root { --app-max-w: 680px; --pad: 28px; }
+  .resp-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 9px !important; }
+}
+@media (min-width: 1024px) {
+  :root { --app-max-w: 820px; --pad: 36px; }
+}
+@media (min-width: 1280px) {
+  :root { --app-max-w: 960px; --pad: 44px; }
+  .resp-grid { grid-template-columns: 1fr 1fr 1fr !important; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+// ─── SUPABASE CLIENT ─────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://hnswiczrtrwoorzsvqlk.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhuc3dpY3pydHJ3b29yenN2cWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MzcwODIsImV4cCI6MjA4OTAxMzA4Mn0.lBZ-mdMHx9dAH851uvYndAogzeAvVNitfNE4Ex-3SkM";
+
+// The UMD bundle may export as window.supabase with createClient inside,
+// or as window.supabase.createClient directly
+let supabase = null;
+try {
+  const sb = window.supabase;
+  if (sb && typeof sb.createClient === "function") {
+    supabase = sb.createClient(SUPABASE_URL, SUPABASE_ANON);
+  } else if (sb && sb.supabase && typeof sb.supabase.createClient === "function") {
+    supabase = sb.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  } else {
+    console.error("Supabase library loaded but createClient not found. Available keys:", sb ? Object.keys(sb) : "none");
+  }
+} catch (e) {
+  console.error("Failed to initialize Supabase:", e);
+}
+const SUPABASE_AVAILABLE = supabase !== null;
+
+// ─── SHARED STORE ────────────────────────────────────────────────────────────
+// This store works exactly like before (in-memory, reactive),
+// but now it loads from Supabase on startup and saves changes back.
+
+const INITIAL_GROUP = {
+  name:"Harvest Table", organizer:"AR", handAmount:100,
+  frequency:"Bi-weekly", startDate:"Oct 10, 2025", endDate:"Jun 19, 2026",
+  dates:["Oct 10, 2025","Oct 24, 2025","Nov 07, 2025","Nov 21, 2025","Dec 05, 2025","Dec 19, 2025","Jan 02, 2026","Jan 16, 2026","Jan 30, 2026","Feb 13, 2026","Feb 27, 2026","Mar 13, 2026","Mar 27, 2026","Apr 10, 2026","Apr 24, 2026","May 08, 2026","May 22, 2026","Jun 05, 2026","Jun 19, 2026"],
+  paidThrough:9, openRound:10,
+};
+
+const SEED_MEMBERS = [
+  {id:"m01",name:"Adenike",      pay:"Zelle", pi:0,  hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m02",name:"Alexis",       pay:"Zelle", pi:1,  hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m03",name:"Warren",       pay:"Zelle", pi:2,  hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m04",name:"Amie",         pay:"Venmo", pi:3,  hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m05",name:"Yvette (H1)",  pay:"Zelle", pi:4,  hands:2,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m06",name:"Jessika (H1)", pay:"Zelle", pi:5,  hands:3,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m07",name:"Yvette (H2)",  pay:"Zelle", pi:6,  hands:2,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m08",name:"Averil",       pay:"Zelle", pi:7,  hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m09",name:"Daddy",        pay:"Zelle", pi:8,  hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m10",name:"Kamaaya",      pay:"Zelle", pi:9,  hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m11",name:"Aunya",        pay:"Zelle", pi:10, hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m12",name:"Tyree (H1)",   pay:"Zelle", pi:11, hands:2,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m13",name:"Terrence",     pay:"Zelle", pi:12, hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m14",name:"Jessika (H2)", pay:"Zelle", pi:13, hands:3,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m15",name:"Wesley",       pay:"Venmo", pi:14, hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m16",name:"Tyree (H2)",   pay:"Zelle", pi:15, hands:2,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m17",name:"Richard",      pay:"Zelle", pi:16, hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m18",name:"Sam",          pay:"Zelle", pi:17, hands:1,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+  {id:"m19",name:"Jessika (H3)", pay:"Zelle", pi:18, hands:3,paid:[1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0]},
+];
+
+// ─── DATE GENERATION ─────────────────────────────────────────────────────────
+function generateCycleDates(startDate, frequency, count) {
+  const dates = [];
+  const d = new Date(startDate + "T12:00:00");
+  const intervalDays = frequency === "weekly" ? 7 : frequency === "bi-weekly" ? 14 : 30;
+  for (let i = 0; i < count; i++) {
+    const dt = new Date(d);
+    dt.setDate(d.getDate() + i * intervalDays);
+    dates.push(formatDate(dt));
+  }
+  return dates;
+}
+function formatDate(d) {
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}, ${d.getFullYear()}`;
+}
+function toInputDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + " 12:00:00");
+  if (isNaN(d)) return "";
+  return d.toISOString().split("T")[0];
+}
+function fromInputDate(val) {
+  if (!val) return "";
+  const d = new Date(val + "T12:00:00");
+  return formatDate(d);
+}
+
+// ─── GROUP SETUP STORE ───────────────────────────────────────────────────────
+let _createdGroups = [];
+function saveCreatedGroup(group) {
+  _createdGroups.push(group);
+  // Also save to Supabase
+  if (SUPABASE_AVAILABLE) {
+    const dbGroup = {
+    name: group.name,
+    organizer_name: "AR",
+    organizer_initials: "AR",
+    hand_amount: group.handAmount,
+    frequency: group.frequency.toLowerCase(),
+    start_date: group.startDate,
+    end_date: group.endDate,
+    dates: group.dates,
+    paid_through: -1,
+    open_round: 0,
+    status: "active",
+  };
+  supabase.from("groups").insert(dbGroup).then(({error}) => {
+    if (error) console.error("Error saving group:", error);
+    else console.log("Group saved to Supabase");
+  });
+  }
+}
+function getCreatedGroups() { return [..._createdGroups]; }
+
+// ─── SUPABASE DB ID TRACKING ─────────────────────────────────────────────────
+// When data is loaded from Supabase, we track the database IDs so we can
+// update the right rows when changes happen.
+let _dbGroupId = null;       // UUID of the active group in the groups table
+let _dbMemberIds = {};       // map of local member id -> Supabase UUID
+let _dbReady = false;        // true once initial load is complete
+
+let _state = { group: {...INITIAL_GROUP}, members: SEED_MEMBERS, paymentOverrides: {}, submissions: [] };
+const _listeners = new Set();
+function notify() { _listeners.forEach(fn => fn({..._state})); }
+function getState() { return {..._state}; }
+function subscribe(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
+
+// Derived values (computed from current state)
+function getGroup()      { return _state.group; }
+function getTotalHands() { return _state.members.length; }
+function getPotValue()   { return _state.members.length * _state.group.handAmount; }
+function getDateLabels() { return _state.group.dates.map(d => d.replace(/, 20\d{2}/g,"")); }
+
+// ─── SUPABASE: LOAD DATA ON STARTUP ──────────────────────────────────────────
+async function loadFromSupabase() {
+  if (!SUPABASE_AVAILABLE) {
+    console.warn("Supabase not available — running in offline mode with seed data");
+    return false;
+  }
+  try {
+    // Try to load existing group
+    const { data: groups, error: gErr } = await supabase
+      .from("groups").select("*").eq("status", "active").order("created_at", {ascending: false}).limit(1);
+
+    if (gErr) { console.error("Error loading groups:", gErr); return false; }
+
+    if (groups && groups.length > 0) {
+      const g = groups[0];
+      _dbGroupId = g.id;
+      _state.group = {
+        name: g.name, organizer: g.organizer_initials, handAmount: g.hand_amount,
+        frequency: g.frequency.charAt(0).toUpperCase() + g.frequency.slice(1),
+        startDate: g.dates[0] || g.start_date, endDate: g.dates[g.dates.length-1] || g.end_date,
+        dates: g.dates, paidThrough: g.paid_through, openRound: g.open_round,
+      };
+
+      // Load members for this group
+      const { data: members, error: mErr } = await supabase
+        .from("members").select("*").eq("group_id", g.id).order("payout_slot", {ascending: true});
+
+      if (!mErr && members && members.length > 0) {
+        // Load payments for these members
+        const memberIds = members.map(m => m.id);
+        const { data: payments, error: pErr } = await supabase
+          .from("payments").select("*").in("member_id", memberIds);
+
+        // Build payment lookup: member_id -> {round_index: paid}
+        const paymentLookup = {};
+        if (!pErr && payments) {
+          payments.forEach(p => {
+            if (!paymentLookup[p.member_id]) paymentLookup[p.member_id] = {};
+            paymentLookup[p.member_id][p.round_index] = p.paid ? 1 : 0;
+          });
+        }
+
+        const numRounds = g.dates.length;
+        _state.members = members.map(m => {
+          const paidArr = Array(numRounds).fill(0);
+          const lookup = paymentLookup[m.id] || {};
+          Object.entries(lookup).forEach(([ri, v]) => { paidArr[Number(ri)] = v; });
+          const localId = `db_${m.id}`;
+          _dbMemberIds[localId] = m.id;
+          return {
+            id: localId, name: m.name, pay: m.payment_method,
+            pi: m.payout_slot, hands: m.hands, paid: paidArr,
+          };
+        });
+        _state.paymentOverrides = {};
+      }
+
+      // Load submissions
+      const { data: subs, error: sErr } = await supabase
+        .from("submissions").select("*").eq("group_id", g.id).order("submitted_at", {ascending: true});
+
+      if (!sErr && subs) {
+        _state.submissions = subs.map(s => ({
+          id: s.id, nickname: s.nickname, payMethod: s.payment_method,
+          hands: s.hands, prefs: s.preferences, status: s.status,
+          submittedAt: s.submitted_at,
+        }));
+      }
+
+      _dbReady = true;
+      notify();
+      console.log("Loaded from Supabase:", g.name, _state.members.length, "members");
+      return true;
+    }
+
+    // No group found — seed the database with Harvest Table
+    console.log("No group in database. Seeding Harvest Table...");
+    return await seedDatabase();
+  } catch (err) {
+    console.error("Supabase load failed:", err);
+    return false;
+  }
+}
+
+// ─── SUPABASE: SEED HARVEST TABLE ────────────────────────────────────────────
+async function seedDatabase() {
+  try {
+    const g = INITIAL_GROUP;
+    const { data: newGroup, error: gErr } = await supabase.from("groups").insert({
+      name: g.name, organizer_name: "Adenike Roberts", organizer_initials: g.organizer,
+      hand_amount: g.handAmount, frequency: g.frequency.toLowerCase(),
+      start_date: "2025-10-10", end_date: "2026-06-19",
+      dates: g.dates, paid_through: g.paidThrough, open_round: g.openRound,
+      status: "active",
+    }).select().single();
+
+    if (gErr) { console.error("Error seeding group:", gErr); return false; }
+    _dbGroupId = newGroup.id;
+
+    // Insert all seed members
+    const memberInserts = SEED_MEMBERS.map(m => ({
+      group_id: newGroup.id, name: m.name, payment_method: m.pay,
+      hands: m.hands, hand_index: 0, payout_slot: m.pi,
+    }));
+    const { data: newMembers, error: mErr } = await supabase
+      .from("members").insert(memberInserts).select();
+
+    if (mErr) { console.error("Error seeding members:", mErr); return false; }
+
+    // Map local IDs to database IDs and insert payment records
+    const paymentInserts = [];
+    newMembers.forEach((dbm, idx) => {
+      const seed = SEED_MEMBERS[idx];
+      const localId = `db_${dbm.id}`;
+      _dbMemberIds[localId] = dbm.id;
+      _state.members[idx] = {..._state.members[idx], id: localId};
+
+      // Create payment records for each round
+      seed.paid.forEach((p, ri) => {
+        if (p === 1) {
+          paymentInserts.push({
+            group_id: newGroup.id, member_id: dbm.id,
+            round_index: ri, paid: true, paid_at: new Date().toISOString(),
+          });
+        }
+      });
+    });
+
+    if (paymentInserts.length > 0) {
+      const { error: pErr } = await supabase.from("payments").insert(paymentInserts);
+      if (pErr) console.error("Error seeding payments:", pErr);
+    }
+
+    _dbReady = true;
+    notify();
+    console.log("Seeded Harvest Table to Supabase with", newMembers.length, "members");
+    return true;
+  } catch (err) {
+    console.error("Seed failed:", err);
+    return false;
+  }
+}
+
+// ─── SUPABASE: PERSIST FUNCTIONS ─────────────────────────────────────────────
+// These run in the background after local state updates.
+// The UI stays fast because it updates locally first, then syncs.
+
+function persistGroup() {
+  if (!SUPABASE_AVAILABLE || !_dbReady || !_dbGroupId) return;
+  const g = _state.group;
+  supabase.from("groups").update({
+    name: g.name, hand_amount: g.handAmount,
+    frequency: g.frequency.toLowerCase(),
+    dates: g.dates, paid_through: g.paidThrough, open_round: g.openRound,
+    end_date: g.endDate,
+  }).eq("id", _dbGroupId).then(({error}) => {
+    if (error) console.error("Error persisting group:", error);
+  });
+}
+
+function persistMember(localId) {
+  if (!SUPABASE_AVAILABLE || !_dbReady) return;
+  const dbId = _dbMemberIds[localId];
+  if (!dbId) return;
+  const m = _state.members.find(x => x.id === localId);
+  if (!m) return;
+  supabase.from("members").update({
+    name: m.name, payment_method: m.pay,
+    payout_slot: m.pi, hands: m.hands,
+  }).eq("id", dbId).then(({error}) => {
+    if (error) console.error("Error persisting member:", error);
+  });
+}
+
+function persistPayment(localMemberId, roundIndex, paid) {
+  if (!SUPABASE_AVAILABLE || !_dbReady || !_dbGroupId) return;
+  const dbMemberId = _dbMemberIds[localMemberId];
+  if (!dbMemberId) return;
+  supabase.from("payments").upsert({
+    group_id: _dbGroupId, member_id: dbMemberId,
+    round_index: roundIndex, paid: paid,
+    paid_at: paid ? new Date().toISOString() : null,
+  }, { onConflict: "member_id,round_index" }).then(({error}) => {
+    if (error) console.error("Error persisting payment:", error);
+  });
+}
+
+// Group editing
+function updateGroup(changes) {
+  _state = {..._state, group: {..._state.group, ...changes}};
+  notify();
+  persistGroup();
+}
+
+// Member management
+function addMember(member) {
+  const tempId = `temp_${Date.now()}`;
+  const numRounds = _state.group.dates.length;
+  const newMember = {
+    id: tempId, ...member,
+    pi: _state.members.length,
+    paid: Array(numRounds).fill(0),
+  };
+  _state = {..._state, members: [..._state.members, newMember]};
+  notify();
+
+  // Insert into Supabase and get real ID
+  if (SUPABASE_AVAILABLE && _dbReady && _dbGroupId) {
+    supabase.from("members").insert({
+      group_id: _dbGroupId, name: member.name, payment_method: member.pay,
+      hands: member.hands || 1, hand_index: 0, payout_slot: newMember.pi,
+    }).select().single().then(({data, error}) => {
+      if (!error && data) {
+        const localId = `db_${data.id}`;
+        _dbMemberIds[localId] = data.id;
+        _state = {..._state, members: _state.members.map(m =>
+          m.id === tempId ? {...m, id: localId} : m
+        )};
+        notify();
+      }
+    });
+  }
+  return newMember;
+}
+
+function removeMember(memberId) {
+  const dbId = _dbMemberIds[memberId];
+  const updated = _state.members.filter(m => m.id !== memberId);
+  const reindexed = updated.map((m, i) => ({...m, pi: i}));
+  _state = {..._state, members: reindexed};
+  notify();
+
+  if (SUPABASE_AVAILABLE && dbId) {
+    supabase.from("members").delete().eq("id", dbId).then(({error}) => {
+      if (error) console.error("Error deleting member:", error);
+    });
+    // Update payout_slots for remaining members
+    reindexed.forEach(m => persistMember(m.id));
+  }
+}
+
+function updateMember(memberId, changes) {
+  _state = {..._state, members: _state.members.map(m => m.id === memberId ? {...m, ...changes} : m)};
+  notify();
+  persistMember(memberId);
+}
+
+function swapMemberSlots(id1, id2) {
+  const m1 = _state.members.find(m => m.id === id1);
+  const m2 = _state.members.find(m => m.id === id2);
+  if (!m1 || !m2) return;
+  const pi1 = m1.pi, pi2 = m2.pi;
+  _state = {..._state, members: _state.members.map(m => {
+    if (m.id === id1) return {...m, pi: pi2};
+    if (m.id === id2) return {...m, pi: pi1};
+    return m;
+  })};
+  notify();
+  persistMember(id1);
+  persistMember(id2);
+}
+
+function moveMemberToSlot(memberId, targetSlotIndex) {
+  const mover = _state.members.find(m => m.id === memberId);
+  if (!mover) return;
+  const occupant = _state.members.find(m => m.pi === targetSlotIndex && m.id !== memberId);
+  const oldSlot = mover.pi;
+  _state = {..._state, members: _state.members.map(m => {
+    if (m.id === memberId) return {...m, pi: targetSlotIndex};
+    if (occupant && m.id === occupant.id) return {...m, pi: oldSlot};
+    return m;
+  })};
+  notify();
+  persistMember(memberId);
+  if (occupant) persistMember(occupant.id);
+  return occupant;
+}
+
+// Add rounds to the group (extend the cycle)
+function addRounds(count) {
+  const g = _state.group;
+  const lastDate = g.dates[g.dates.length - 1];
+  const freq = g.frequency.toLowerCase();
+  const newDates = generateCycleDates(lastDate, freq, count + 1).slice(1);
+  const allDates = [...g.dates, ...newDates];
+  _state = {
+    ..._state,
+    group: {...g, dates: allDates, endDate: allDates[allDates.length - 1]},
+    members: _state.members.map(m => ({...m, paid: [...m.paid, ...Array(count).fill(0)]})),
+  };
+  notify();
+  persistGroup();
+}
+
+function togglePayment(memberId, roundIndex) {
+  const key = `${memberId}-${roundIndex}`;
+  const m   = _state.members.find(x => x.id === memberId);
+  const cur = _state.paymentOverrides[key] !== undefined ? _state.paymentOverrides[key] : m?.paid[roundIndex]===1;
+  const newVal = !cur;
+  _state = {..._state, paymentOverrides:{..._state.paymentOverrides,[key]:newVal}};
+  notify();
+  persistPayment(memberId, roundIndex, newVal);
+}
+function isPaid(memberId, roundIndex) {
+  const key = `${memberId}-${roundIndex}`;
+  const m   = _state.members.find(x => x.id === memberId);
+  return _state.paymentOverrides[key] !== undefined ? _state.paymentOverrides[key] : m?.paid[roundIndex]===1;
+}
+
+function submitOnboarding(data) {
+  const sub = {id:`sub_${Date.now()}`, ...data, submittedAt:new Date().toISOString(), status:"pending"};
+  _state = {..._state, submissions:[..._state.submissions, sub]};
+  notify();
+
+  // Persist to Supabase
+  if (SUPABASE_AVAILABLE && _dbReady && _dbGroupId) {
+    supabase.from("submissions").insert({
+      group_id: _dbGroupId, nickname: data.nickname,
+      payment_method: data.payMethod, hands: data.hands,
+      preferences: data.prefs, status: "pending",
+    }).select().single().then(({data: dbSub, error}) => {
+      if (!error && dbSub) {
+        // Update local submission with real DB id
+        _state = {..._state, submissions: _state.submissions.map(s =>
+          s.id === sub.id ? {...s, id: dbSub.id} : s
+        )};
+        notify();
+      }
+    });
+  }
+  return sub;
+}
+
+function approveSubmission(id) {
+  _state = {..._state, submissions:_state.submissions.map(s => s.id===id?{...s,status:"approved"}:s)};
+  notify();
+  if (SUPABASE_AVAILABLE) supabase.from("submissions").update({status: "approved"}).eq("id", id).then(({error}) => {
+    if (error) console.error("Error approving submission:", error);
+  });
+}
+
+function dismissSubmission(id) {
+  _state = {..._state, submissions:_state.submissions.filter(s => s.id!==id)};
+  notify();
+  if (SUPABASE_AVAILABLE) supabase.from("submissions").delete().eq("id", id).then(({error}) => {
+    if (error) console.error("Error dismissing submission:", error);
+  });
+}
+
+// ─── SCHEDULE GENERATION ALGORITHM ──────────────────────────────────────────
+// Rules:
+// 1. Slot 0 (first date) is always the organizer
+// 2. First come first served on 1st choices (by submittedAt)
+// 3. Multi-hand fairness: guarantee at least one 1st choice per person before
+//    giving anyone a second 1st choice. Extra hands fall to 2nd choice, then
+//    closest available date to their 1st pick.
+// 4. Everyone else: 2nd choice, then closest available.
+//
+// Returns: { assignments: [{name, pay, hands, handIndex, slotIndex, method}], unassigned: [] }
+function generateSchedule(approvedSubs) {
+  const g = getGroup();
+  const totalSlots = g.dates.length;
+
+  // Slot 0 reserved for organizer
+  const taken = new Set([0]);
+  const assignments = [{
+    name: g.organizer, pay: "Organizer", hands: 1, handIndex: 0,
+    slotIndex: 0, method: "organizer", prefFirst: g.dates[0], prefSecond: null,
+  }];
+
+  // Sort submissions by submittedAt (first come first served)
+  const sorted = [...approvedSubs].sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
+
+  // Build a flat list of "hand requests" — each hand is a separate request
+  // Tag each with its parent submission info
+  const handRequests = [];
+  sorted.forEach(sub => {
+    sub.prefs.forEach((pref, hi) => {
+      handRequests.push({
+        subId: sub.id,
+        name: sub.hands > 1 ? `${sub.nickname} (H${hi+1})` : sub.nickname,
+        baseName: sub.nickname,
+        pay: sub.payMethod,
+        hands: sub.hands,
+        handIndex: hi,
+        first: pref.first,
+        second: pref.second,
+        submittedAt: sub.submittedAt,
+      });
+    });
+  });
+
+  function dateToSlot(dateStr) {
+    return g.dates.indexOf(dateStr);
+  }
+
+  function closestOpen(targetSlot) {
+    // Find the nearest open slot to the target
+    for (let dist = 1; dist < totalSlots; dist++) {
+      if (targetSlot + dist < totalSlots && !taken.has(targetSlot + dist)) return targetSlot + dist;
+      if (targetSlot - dist >= 0 && !taken.has(targetSlot - dist)) return targetSlot - dist;
+    }
+    return -1; // no slots left
+  }
+
+  function assign(req, slotIndex, method) {
+    taken.add(slotIndex);
+    assignments.push({
+      name: req.name, pay: req.pay, hands: req.hands, handIndex: req.handIndex,
+      slotIndex, method,
+      prefFirst: req.first, prefSecond: req.second,
+    });
+  }
+
+  // ── PASS 1: First choices, one per person (multi-hand fairness) ──
+  // Group hand requests by person, give each person their first available 1st-choice
+  const personFirstDone = new Set(); // people who got a 1st choice
+  const pending = []; // hand requests not yet assigned
+
+  // Process one hand per person for 1st choices
+  const byPerson = {};
+  handRequests.forEach(req => {
+    if (!byPerson[req.baseName]) byPerson[req.baseName] = [];
+    byPerson[req.baseName].push(req);
+  });
+
+  // First come first served order of people
+  const personOrder = sorted.map(s => s.nickname).filter((v, i, a) => a.indexOf(v) === i);
+
+  personOrder.forEach(personName => {
+    const reqs = byPerson[personName];
+    let gotOne = false;
+    for (const req of reqs) {
+      const slot = dateToSlot(req.first);
+      if (!gotOne && slot >= 0 && !taken.has(slot)) {
+        assign(req, slot, "1st choice");
+        personFirstDone.add(personName);
+        gotOne = true;
+      } else {
+        pending.push(req);
+      }
+    }
+    // If none of their 1st choices were available, all go to pending
+    if (!gotOne) {
+      // Already added to pending in the loop above
+    }
+  });
+
+  // ── PASS 2: Remaining 1st choices for multi-hand people ──
+  const stillPending = [];
+  pending.forEach(req => {
+    const slot = dateToSlot(req.first);
+    if (slot >= 0 && !taken.has(slot)) {
+      assign(req, slot, "1st choice");
+    } else {
+      stillPending.push(req);
+    }
+  });
+
+  // ── PASS 3: 2nd choices ──
+  const finalPending = [];
+  stillPending.forEach(req => {
+    const slot = dateToSlot(req.second);
+    if (slot >= 0 && !taken.has(slot)) {
+      assign(req, slot, "2nd choice");
+    } else {
+      finalPending.push(req);
+    }
+  });
+
+  // ── PASS 4: Closest available to their 1st choice ──
+  const unassigned = [];
+  finalPending.forEach(req => {
+    const targetSlot = dateToSlot(req.first);
+    const slot = closestOpen(targetSlot >= 0 ? targetSlot : 0);
+    if (slot >= 0) {
+      assign(req, slot, "closest available");
+    } else {
+      unassigned.push(req);
+    }
+  });
+
+  // Sort assignments by slot index
+  assignments.sort((a, b) => a.slotIndex - b.slotIndex);
+
+  return { assignments, unassigned };
+}
+
+// Apply a generated schedule: creates/updates members from assignments
+function applySchedule(result) {
+  const g = getGroup();
+  const numRounds = g.dates.length;
+  const newMembers = result.assignments.map((a, i) => ({
+    id: `m${String(i+1).padStart(2,"0")}_${Date.now()}_${i}`,
+    name: a.name,
+    pay: a.pay,
+    pi: a.slotIndex,
+    hands: a.hands,
+    paid: Array(numRounds).fill(0),
+  }));
+  _state = {..._state, members: newMembers, paymentOverrides: {}};
+  notify();
+}
+function useStore() {
+  const [state, setState] = useState(getState());
+  useEffect(() => { const unsub = subscribe(setState); return unsub; }, []);
+  return state;
+}
+
+// ─── THEMES ──────────────────────────────────────────────────────────────────
+const THEMES = {
+  rosegold:{name:"Rose Gold",emoji:"🌹",desc:"Burgundy & rose",vars:{"--primary":"#6B1E3A","--primary-deep":"#4A1028","--primary-mid":"#8B3050","--accent":"#C4788A","--accent-light":"#E8B4BF","--accent-pale":"#F5DDE2","--gold":"#C9906A","--gold-light":"#E8C4A8","--bg":"#FDF0F2","--bg-mid":"#F7E2E6","--surface":"#FFFFFF","--text":"#2A0F1A","--text-mid":"#6B3048","--text-soft":"#A07080","--border":"#EDD5DA","--green":"#4A7C65","--green-bg":"#D4EDE3","--header-grad":"linear-gradient(160deg,#4A1028 0%,#6B1E3A 60%,#8B3050 100%)","--shimmer":"linear-gradient(90deg,#6B1E3A,#C4788A,#C9906A)","--card-bg":"#FFFFFF","--chip-open":"#C4788A","--open-dot":"#C9906A"}},
+  midnight:{name:"Midnight",emoji:"🌙",desc:"Navy & gold",vars:{"--primary":"#1A2744","--primary-deep":"#0D1628","--primary-mid":"#2A3D6B","--accent":"#7B8FC4","--accent-light":"#B4C0E8","--accent-pale":"#DDE3F5","--gold":"#C9A84C","--gold-light":"#E8D4A8","--bg":"#0F1E3A","--bg-mid":"#162240","--surface":"#1A2744","--text":"#E8EDF8","--text-mid":"#A0B0D8","--text-soft":"#607090","--border":"#2A3D6B","--green":"#4A9C7A","--green-bg":"#1A3D2E","--header-grad":"linear-gradient(160deg,#0D1628 0%,#1A2744 60%,#2A3D6B 100%)","--shimmer":"linear-gradient(90deg,#1A2744,#7B8FC4,#C9A84C)","--card-bg":"#1E2E52","--chip-open":"#C9A84C","--open-dot":"#C9A84C"}},
+  forest:{name:"Forest",emoji:"🌿",desc:"Deep green & cream",vars:{"--primary":"#1E4A2E","--primary-deep":"#0F2E1A","--primary-mid":"#2E6B40","--accent":"#6BA87C","--accent-light":"#A8D4B4","--accent-pale":"#DCF0E2","--gold":"#B8924A","--gold-light":"#DEC890","--bg":"#F2F7F4","--bg-mid":"#DDF0E4","--surface":"#FFFFFF","--text":"#0F2E1A","--text-mid":"#2E5A3A","--text-soft":"#6A907A","--border":"#C4DFCB","--green":"#2E6B40","--green-bg":"#C4DFCB","--header-grad":"linear-gradient(160deg,#0F2E1A 0%,#1E4A2E 60%,#2E6B40 100%)","--shimmer":"linear-gradient(90deg,#1E4A2E,#6BA87C,#B8924A)","--card-bg":"#FFFFFF","--chip-open":"#6BA87C","--open-dot":"#B8924A"}},
+  sky:{name:"Sky",emoji:"☁️",desc:"Soft blue & white",vars:{"--primary":"#1B4B8A","--primary-deep":"#0F2D5A","--primary-mid":"#2E6BB0","--accent":"#6AAAD4","--accent-light":"#B4D8F0","--accent-pale":"#DDF0FA","--gold":"#C9A84C","--gold-light":"#E8D4A8","--bg":"#F0F6FC","--bg-mid":"#DDF0FA","--surface":"#FFFFFF","--text":"#0F2D5A","--text-mid":"#2A5080","--text-soft":"#7090B0","--border":"#C4DCF0","--green":"#2E8A60","--green-bg":"#C4E8D8","--header-grad":"linear-gradient(160deg,#0F2D5A 0%,#1B4B8A 60%,#2E6BB0 100%)","--shimmer":"linear-gradient(90deg,#1B4B8A,#6AAAD4,#C9A84C)","--card-bg":"#FFFFFF","--chip-open":"#6AAAD4","--open-dot":"#C9A84C"}},
+  panaf:{name:"Pan-African",emoji:"✊🏾",desc:"Red, black & gold",vars:{"--primary":"#B22222","--primary-deep":"#1A0A0A","--primary-mid":"#8B0000","--accent":"#D4882A","--accent-light":"#E8C484","--accent-pale":"#F5E8CC","--gold":"#D4A017","--gold-light":"#ECD878","--bg":"#1A0A0A","--bg-mid":"#2A1010","--surface":"#221010","--text":"#F5E8CC","--text-mid":"#D4A880","--text-soft":"#907060","--border":"#4A2020","--green":"#2E7D32","--green-bg":"#1B3A1C","--header-grad":"linear-gradient(160deg,#1A0A0A 0%,#8B0000 50%,#B22222 100%)","--shimmer":"linear-gradient(90deg,#8B0000,#D4A017,#2E7D32)","--card-bg":"#2A1010","--chip-open":"#D4A017","--open-dot":"#2E7D32"}},
+};
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function applyThemeVars(key) {
+  const vars = THEMES[key].vars;
+  const el = document.documentElement;
+  Object.entries(vars).forEach(([k,v]) => el.style.setProperty(k,v));
+}
+function privateInitials(name) {
+  const clean = name.replace(/\s*\(.*\)/,"").trim();
+  const parts = clean.split(" ");
+  return parts.length===1 ? parts[0][0].toUpperCase()+"." : parts[0][0].toUpperCase()+". "+parts[parts.length-1][0].toUpperCase()+".";
+}
+function avatarLetters(name) {
+  return name.replace(/\s*\(.*\)/,"").split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+}
+
+// ─── SHARED COMPONENTS ───────────────────────────────────────────────────────
+function Alert({msg}) {
+  if (!msg) return null;
+  return <div style={{position:"fixed",top:18,left:"50%",transform:"translateX(-50%)",background:"var(--header-grad)",color:"white",padding:"11px 22px",borderRadius:50,fontSize:12,fontWeight:600,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 8px 32px rgba(0,0,0,0.3)",fontFamily:"'Jost',sans-serif"}}>✦ {msg}</div>;
+}
+
+function ThemeModal({current, onSelect, onClose}) {
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"flex-end"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"var(--surface)",borderRadius:"28px 28px 0 0",width:"100%",maxWidth:"var(--app-max-w)",margin:"0 auto",padding:"28px 24px 48px"}}>
+        <div style={{width:40,height:4,borderRadius:4,background:"var(--border)",margin:"0 auto 22px"}}/>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,fontWeight:600,color:"var(--text)",marginBottom:4}}>Choose <em style={{color:"var(--gold)"}}>Theme</em></div>
+        <div style={{fontSize:12,color:"var(--text-soft)",marginBottom:20,fontFamily:"'Jost',sans-serif"}}>Tap any theme to apply it instantly.</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          {Object.entries(THEMES).map(([key,t]) => (
+            <div key={key} onClick={()=>onSelect(key)} style={{border:`2px solid ${current===key?"var(--primary)":"var(--border)"}`,borderRadius:18,padding:16,cursor:"pointer",background:current===key?"var(--accent-pale)":"var(--bg)"}}>
+              <div style={{width:"100%",height:40,borderRadius:10,marginBottom:10,position:"relative",overflow:"hidden",background:t.vars["--header-grad"]}}>
+                {current===key&&<span style={{position:"absolute",top:6,right:8,fontSize:13,color:"white",fontWeight:700}}>✓</span>}
+                <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:t.vars["--shimmer"]}}/>
+              </div>
+              <span style={{fontSize:22,marginBottom:5,display:"block"}}>{t.emoji}</span>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontWeight:600,color:"var(--text)"}}>{t.name}</div>
+              <div style={{fontSize:10,color:"var(--text-soft)",marginTop:1,fontFamily:"'Jost',sans-serif"}}>{t.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsBtn({onClick}) {
+  return <div onClick={onClick} style={{position:"absolute",top:50,right:20,width:38,height:38,borderRadius:"50%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,cursor:"pointer",zIndex:10}}>🎨</div>;
+}
+
+// ─── APP SHELL ───────────────────────────────────────────────────────────────
+function App() {
+  const [app,   setApp]   = useState("organizer"); // organizer | onboarding | member
+  const [theme, setTheme] = useState("rosegold");
+  const [alert, setAlert] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [dbStatus, setDbStatus] = useState("connecting"); // connecting | loaded | fallback
+
+  useEffect(() => { applyThemeVars(theme); }, [theme]);
+
+  // Load data from Supabase on startup
+  useEffect(() => {
+    loadFromSupabase().then(success => {
+      setDbStatus(success ? "loaded" : "fallback");
+      setLoading(false);
+    }).catch(() => {
+      setDbStatus("fallback");
+      setLoading(false);
+    });
+  }, []);
+
+  const showAlert = msg => { setAlert(msg); setTimeout(()=>setAlert(null),2400); };
+  const changeTheme = key => { setTheme(key); applyThemeVars(key); showAlert(`${THEMES[key].name} theme applied`); };
+
+  const s = {fontFamily:"'Jost',sans-serif",minHeight:"100vh",background:"var(--bg)",color:"var(--text)"};
+
+  if (loading) {
+    return (
+      <div style={{...s, display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",gap:16}}>
+        <div style={{width:60,height:60,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}>✦</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:600,color:"var(--text)"}}>Pard<em style={{color:"var(--gold)"}}>na</em></div>
+        <div style={{fontSize:12,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>Connecting to your data...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={s}>
+      <Alert msg={alert}/>
+      {dbStatus === "loaded" && !alert && (
+        <div style={{position:"fixed",top:8,right:12,display:"flex",alignItems:"center",gap:5,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(8px)",borderRadius:20,padding:"4px 10px",zIndex:300}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#4A9C7A"}}/>
+          <span style={{fontSize:9,color:"rgba(255,255,255,0.6)",fontFamily:"'Jost',sans-serif",fontWeight:500}}>Live</span>
+        </div>
+      )}
+      {dbStatus === "fallback" && !alert && (
+        <div style={{position:"fixed",top:8,right:12,display:"flex",alignItems:"center",gap:5,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(8px)",borderRadius:20,padding:"4px 10px",zIndex:300}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#D4882A"}}/>
+          <span style={{fontSize:9,color:"rgba(255,255,255,0.6)",fontFamily:"'Jost',sans-serif",fontWeight:500}}>Offline</span>
+        </div>
+      )}
+      {/* App switcher bar */}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:500,display:"flex",justifyContent:"center"}}>
+        <div style={{background:"rgba(0,0,0,0.85)",backdropFilter:"blur(12px)",borderRadius:"20px 20px 0 0",padding:"12px 20px 24px",display:"flex",gap:8,maxWidth:"var(--app-max-w)",width:"100%"}}>
+          {[["organizer","⌂","Organizer"],["onboarding","✦","Onboard"],["member","◎","My View"]].map(([id,icon,label])=>(
+            <div key={id} onClick={()=>setApp(id)} style={{flex:1,padding:"10px 6px",borderRadius:14,textAlign:"center",cursor:"pointer",background:app===id?"rgba(255,255,255,0.15)":"transparent",border:app===id?"1px solid rgba(255,255,255,0.2)":"1px solid transparent",transition:"all 0.15s"}}>
+              <div style={{fontSize:18,lineHeight:1}}>{icon}</div>
+              <div style={{fontSize:9,fontWeight:600,letterSpacing:1,textTransform:"uppercase",color:app===id?"white":"rgba(255,255,255,0.45)",marginTop:4}}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{maxWidth:"var(--app-max-w)",margin:"0 auto",paddingBottom:180}}>
+        {app==="organizer"  && <OrganizerApp  theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
+        {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
+        {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
+      </div>
+    </div>
+  );
+}
+
+// ─── ORGANIZER APP ────────────────────────────────────────────────────────────
+function OrganizerApp({theme, changeTheme, showAlert}) {
+  const store = useStore();
+  const { members, submissions } = store;
+  const [screen, setScreen] = useState("home");
+  const [showTheme, setShowTheme] = useState(false);
+  const pending = submissions.filter(s=>s.status==="pending");
+  const PAID_THROUGH = getGroup().paidThrough;
+  const OPEN_ROUND   = getGroup().openRound;
+
+  return (
+    <div>
+      {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
+      {screen==="home"     && <OrgHome     members={members} pending={pending} submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
+      {screen==="grid"     && <OrgGrid     members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
+      {screen==="schedule" && <OrgSchedule members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
+      {screen==="inbox"    && <OrgInbox    pending={pending} submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert}/>}
+      {screen==="setup"    && <OrgSetup    goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
+      {screen==="edit"     && <OrgEdit     goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
+      {screen==="generate" && <OrgGenerate submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
+    </div>
+  );
+}
+
+function OrgHome({members, pending, submissions, goTo, openTheme}) {
+  const PAID_THROUGH = getGroup().paidThrough;
+  const pct = Math.round(((PAID_THROUGH+1)/getTotalHands())*100);
+  const nextMember = members.find(m=>m.pi===getGroup().openRound);
+  const approved = (submissions||[]).filter(s=>s.status==="approved");
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 32px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60,pointerEvents:"none"}}/>
+        <div style={{position:"absolute",width:140,height:140,borderRadius:"50%",background:"radial-gradient(circle,rgba(196,120,138,0.12) 0%,transparent 70%)",bottom:10,left:-40,pointerEvents:"none"}}/>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:34,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Your <em style={{color:"var(--gold-light)"}}>Circle</em></div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>Tuesday, February 24, 2026</div>
+        <div style={{position:"absolute",top:48,right:62,width:42,height:42,borderRadius:"50%",background:"linear-gradient(135deg,var(--accent),var(--gold))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:700,color:"white",border:"2px solid rgba(255,255,255,0.25)"}}>AR</div>
+        <SettingsBtn onClick={openTheme}/>
+        <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
+      </div>
+
+      {/* Stats */}
+      <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
+        {[["$"+getPotValue().toLocaleString(),"Total Pot"],[PAID_THROUGH+1,"Rounds done"],[getTotalHands()-PAID_THROUGH-1,"Remaining"]].map(([v,l],i)=>(
+          <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:16}:{}}>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{v}</div>
+            <div style={{fontSize:10,color:"var(--text-soft)",marginTop:3}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Pending badge */}
+      {pending.length>0&&(
+        <div onClick={()=>goTo("inbox")} style={{margin:"14px var(--pad) 0",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:16,padding:"13px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>📬</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:500,color:"var(--primary)"}}>
+              {pending.length} new submission{pending.length>1?"s":""}
+              <span style={{background:"var(--gold)",color:"#1A0A0A",borderRadius:20,fontSize:10,fontWeight:700,padding:"2px 8px",marginLeft:8}}>{pending.length}</span>
+            </div>
+            <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>Tap to review preferences</div>
+          </div>
+          <div style={{marginLeft:"auto",width:28,height:28,borderRadius:8,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"var(--primary)",flexShrink:0}}>→</div>
+        </div>
+      )}
+
+      {/* Round reminder */}
+      <div style={{margin:"10px var(--pad) 0",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:16,padding:"13px 16px",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:36,height:36,borderRadius:10,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>🔔</div>
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:"var(--primary)"}}>Round 11 opens Feb 27</div>
+          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>Payout to {nextMember?.name} · ${getPotValue().toLocaleString()} pot</div>
+        </div>
+      </div>
+
+      {/* Group card */}
+      <div style={{padding:"var(--pad) var(--pad) 0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:13}}>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)"}}>Active Group</div>
+          <div onClick={e=>{e.stopPropagation();goTo("edit");}} style={{fontSize:10,fontWeight:600,padding:"4px 12px",borderRadius:20,background:"var(--surface)",color:"var(--primary)",border:"1px solid var(--border)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>✎ Edit</div>
+        </div>
+        <div onClick={()=>goTo("grid")} style={{background:"var(--card-bg)",borderRadius:20,padding:"18px 18px 16px",border:"1px solid var(--border)",cursor:"pointer",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:3,borderRadius:"20px 20px 0 0",background:"var(--shimmer)"}}/>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginTop:6}}>
+            <div>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)"}}>{getGroup().name}</div>
+              <div style={{fontSize:11,color:"var(--text-soft)",marginTop:3}}>{getGroup().frequency} · ${getGroup().handAmount}/hand · {getGroup().startDate} – {getGroup().endDate}</div>
+            </div>
+            <span style={{fontSize:10,fontWeight:600,padding:"4px 11px",borderRadius:20,background:"var(--accent-pale)",color:"var(--primary)",border:"1px solid var(--border)"}}>Active</span>
+          </div>
+          <div style={{marginTop:12,height:4,background:"var(--bg-mid)",borderRadius:4,overflow:"hidden"}}>
+            <div style={{height:"100%",borderRadius:4,background:"var(--shimmer)",width:`${pct}%`}}/>
+          </div>
+          <div style={{fontSize:10,color:"var(--text-soft)",marginTop:5,textAlign:"right"}}>Round {PAID_THROUGH+1} of {getTotalHands()} — {pct}%</div>
+          <div style={{display:"flex",marginTop:14,paddingTop:14,borderTop:"1px solid var(--border)"}}>
+            {[[getTotalHands(),"Total hands"],["$"+getPotValue().toLocaleString(),"Pot / round"],["$"+(getTotalHands()*getPotValue()).toLocaleString(),"Full cycle"]].map(([v,l],i)=>(
+              <div key={i} style={{flex:1}}>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,color:"var(--primary)"}}>{v}</div>
+                <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Create new group */}
+      <div style={{padding:"var(--pad) var(--pad) 0"}}>
+        <div onClick={()=>goTo("setup")} style={{background:"var(--surface)",borderRadius:18,padding:"16px 18px",border:"1.5px dashed var(--border)",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
+          <div style={{width:42,height:42,borderRadius:12,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0,color:"var(--primary)",fontWeight:700}}>+</div>
+          <div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>Create New Group</div>
+            <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Set up your next savings circle</div>
+          </div>
+          <div style={{marginLeft:"auto",width:28,height:28,borderRadius:8,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"var(--primary)",flexShrink:0}}>→</div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <OrgNav current="home" goTo={goTo} pendingCount={pending.length}/>
+    </div>
+  );
+}
+
+function OrgNav({current, goTo, pendingCount}) {
+  return (
+    <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"var(--app-max-w)",background:"var(--surface)",borderTop:"1px solid var(--border)",display:"flex",padding:"10px 8px 14px",zIndex:100}}>
+      {[["home","⌂","Dashboard"],["grid","▦","Tracker"],["schedule","◎","Schedule"],["inbox","📬","Inbox"]].map(([id,icon,label])=>(
+        <div key={id} onClick={()=>goTo(id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",padding:"6px 4px",borderRadius:12,background:current===id?"var(--bg-mid)":"transparent",position:"relative"}}>
+          <span style={{fontSize:19,lineHeight:1}}>{icon}</span>
+          <span style={{fontSize:9,fontWeight:600,letterSpacing:1,textTransform:"uppercase",color:current===id?"var(--primary)":"var(--text-soft)"}}>{label}</span>
+          {id==="inbox"&&pendingCount>0&&<div style={{position:"absolute",top:4,right:16,width:7,height:7,borderRadius:"50%",background:"var(--gold)"}}/>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
+  const [search, setSearch] = useState("");
+  const [activeRound, setActiveRound] = useState(null);
+  const [showReminders, setShowReminders] = useState(false);
+  const [editBulk, setEditBulk] = useState(null);
+  const [editIndividual, setEditIndividual] = useState({});
+  const PAID_THROUGH = getGroup().paidThrough;
+  const OPEN_ROUND   = getGroup().openRound;
+  const months = getDateLabels().map(d=>d.split(" ")[0]);
+  const days   = getDateLabels().map(d=>d.split(" ")[1]);
+  const filtered = members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase()));
+  const visibleCols = activeRound!==null ? [activeRound] : getDateLabels().map((_,i)=>i);
+  const nextMember = members.find(m=>m.pi===OPEN_ROUND);
+
+  // Build reminder texts for unpaid members in the open round
+  const unpaidMembers = members.filter(m => m.pi !== OPEN_ROUND && !isPaid(m.id, OPEN_ROUND));
+  const roundDate = getDateLabels()[OPEN_ROUND] || "";
+  const amt = getGroup().handAmount;
+
+  const singleReminder = (m) =>
+    `Hey ${m.name.replace(/\s*\(.*\)/,"")}, Round ${OPEN_ROUND+1} is open — $${amt} due by ${roundDate} via ${m.pay}. Thank you!`;
+
+  const bulkReminder = unpaidMembers.length > 0
+    ? `Reminder: Round ${OPEN_ROUND+1} of ${getGroup().name} is open! $${amt} due by ${roundDate}. Please send your payment via your chosen method. Thank you!`
+    : "";
+
+  const copyText = (text) => {
+    navigator.clipboard.writeText(text).then(() => showAlert("Copied to clipboard ✦")).catch(() => {
+      // Fallback for older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      showAlert("Copied to clipboard ✦");
+    });
+  };
+
+  return (
+    <div>
+      <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 28px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60}}/>
+        <div onClick={()=>goTo("home")} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:500,color:"rgba(255,255,255,0.55)",cursor:"pointer",marginBottom:14,position:"relative"}}>← Back</div>
+        <div style={{display:"inline-flex",alignItems:"center",gap:7,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.18)",borderRadius:20,padding:"5px 13px",fontSize:11,color:"var(--gold-light)",marginBottom:10,position:"relative",fontWeight:500}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#7FD4A8"}}/>Round {PAID_THROUGH+1} of {getTotalHands()} · Open now
+        </div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Harvest <em style={{color:"var(--gold-light)"}}>Table</em></div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>$100/hand · 19 hands · Bi-weekly</div>
+        <div style={{position:"absolute",top:48,right:62,width:42,height:42,borderRadius:"50%",background:"linear-gradient(135deg,var(--accent),var(--gold))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:700,color:"white",border:"2px solid rgba(255,255,255,0.25)"}}>AR</div>
+        <SettingsBtn onClick={openTheme}/>
+        <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
+      </div>
+
+      <div style={{display:"flex",gap:10,padding:"var(--pad) var(--pad) 0"}}>
+        {[["$"+getPotValue().toLocaleString(),"Pot per round"],["$"+(getTotalHands()*getPotValue()).toLocaleString(),"Full cycle value"]].map(([v,l],i)=>(
+          <div key={i} style={{flex:1,background:"var(--surface)",borderRadius:16,padding:14,border:"1px solid var(--border)"}}>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,fontWeight:700,color:i===1?"var(--gold)":"var(--primary)",lineHeight:1}}>{v}</div>
+            <div style={{fontSize:10,color:"var(--text-soft)",marginTop:4}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:40,height:40,borderRadius:12,background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{theme==="rosegold"?"🌹":"💰"}</div>
+        <div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>Next: {nextMember?.name}</div>
+          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>{getDateLabels()[getGroup().openRound]} · ${getPotValue().toLocaleString()} payout</div>
+        </div>
+        <button onClick={()=>{setShowReminders(!showReminders);if(!showReminders){setEditBulk(bulkReminder);setEditIndividual({});}}} style={{marginLeft:"auto",background:"var(--primary)",color:"white",border:"none",borderRadius:10,padding:"8px 13px",fontFamily:"'Jost',sans-serif",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0}}>{showReminders?"Close":"Remind All"}</button>
+      </div>
+
+      {/* Reminder Panel */}
+      {showReminders && (
+        <div style={{margin:"10px var(--pad) 0",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:18,padding:"18px 18px 14px",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)",borderRadius:"18px 18px 0 0"}}/>
+
+          {unpaidMembers.length === 0 ? (
+            <div style={{textAlign:"center",padding:"12px 0"}}>
+              <div style={{fontSize:20,marginBottom:8}}>✓</div>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>Everyone has paid!</div>
+              <div style={{fontSize:11,color:"var(--text-soft)",marginTop:4,fontFamily:"'Jost',sans-serif"}}>No reminders needed for Round {OPEN_ROUND+1}.</div>
+            </div>
+          ) : (
+            <>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,marginTop:4}}>
+                <div>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,color:"var(--text)"}}>Payment Reminders</div>
+                  <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{unpaidMembers.length} member{unpaidMembers.length!==1?"s":""} unpaid for Round {OPEN_ROUND+1} · Tap any message to edit</div>
+                </div>
+              </div>
+
+              {/* Group reminder */}
+              <div style={{background:"var(--bg)",borderRadius:14,padding:"14px 14px 10px",border:"1px solid var(--border)",marginBottom:12}}>
+                <div style={{fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"var(--text-mid)",marginBottom:8,fontFamily:"'Jost',sans-serif"}}>Group message (paste in group chat)</div>
+                <textarea value={editBulk !== null ? editBulk : bulkReminder} onChange={e=>setEditBulk(e.target.value)} style={{width:"100%",minHeight:80,padding:"10px 12px",border:"1px solid var(--border)",borderRadius:10,fontFamily:"'Jost',sans-serif",fontSize:12,color:"var(--text)",background:"var(--surface)",outline:"none",resize:"vertical",lineHeight:1.6}}/>
+                <button onClick={()=>copyText(editBulk !== null ? editBulk : bulkReminder)} style={{width:"100%",padding:10,borderRadius:10,border:"none",background:"var(--primary)",color:"white",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Jost',sans-serif",marginTop:6}}>Copy Group Reminder</button>
+              </div>
+
+              {/* Individual reminders */}
+              <div style={{fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"var(--text-mid)",marginBottom:8,fontFamily:"'Jost',sans-serif"}}>Individual messages</div>
+              {unpaidMembers.map(m => {
+                const defaultMsg = singleReminder(m);
+                const currentMsg = editIndividual[m.id] !== undefined ? editIndividual[m.id] : defaultMsg;
+                return (
+                  <div key={m.id} style={{background:"var(--bg)",borderRadius:12,padding:"10px 12px",border:"1px solid var(--border)",marginBottom:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:500,color:"var(--text)",fontFamily:"'Jost',sans-serif"}}>{m.name}</div>
+                        <div style={{fontSize:10,color:"var(--text-soft)",marginTop:1,fontFamily:"'Jost',sans-serif"}}>{m.pay} · ${amt}</div>
+                      </div>
+                      <button onClick={()=>copyText(currentMsg)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid var(--border)",background:"var(--surface)",color:"var(--primary)",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Jost',sans-serif",flexShrink:0}}>Copy</button>
+                    </div>
+                    <textarea value={currentMsg} onChange={e=>setEditIndividual(prev=>({...prev,[m.id]:e.target.value}))} style={{width:"100%",minHeight:50,padding:"8px 10px",border:"1px solid var(--border)",borderRadius:8,fontFamily:"'Jost',sans-serif",fontSize:11,color:"var(--text)",background:"var(--surface)",outline:"none",resize:"vertical",lineHeight:1.5}}/>
+                  </div>
+                );
+              })}
+
+              {/* Copy all individual */}
+              <button onClick={()=>copyText(unpaidMembers.map(m=>{const d=singleReminder(m);return editIndividual[m.id]!==undefined?editIndividual[m.id]:d;}).join("\n\n"))} style={{width:"100%",padding:10,borderRadius:10,border:"1.5px solid var(--border)",background:"var(--surface)",color:"var(--primary)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Jost',sans-serif",marginTop:6}}>Copy All Individual Messages</button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div style={{padding:"14px var(--pad) 0",display:"flex",gap:8}}>
+        <div style={{flex:1,position:"relative"}}>
+          <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"var(--text-soft)",pointerEvents:"none"}}>⌕</span>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search member…" style={{width:"100%",padding:"10px 32px",border:"1.5px solid var(--border)",borderRadius:12,fontFamily:"'Jost',sans-serif",fontSize:13,color:"var(--text)",background:"var(--surface)",outline:"none"}}/>
+        </div>
+      </div>
+
+      <div style={{padding:"10px 20px 0",display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
+        <div onClick={()=>setActiveRound(null)} style={{flexShrink:0,padding:"5px 11px",borderRadius:20,fontSize:10,fontWeight:600,cursor:"pointer",border:`1.5px solid ${activeRound===null?"var(--primary)":"var(--border)"}`,background:activeRound===null?"var(--primary)":"var(--surface)",color:activeRound===null?"white":"var(--text-soft)",whiteSpace:"nowrap"}}>All rounds</div>
+        {getDateLabels().map((d,i)=>(
+          <div key={i} onClick={()=>setActiveRound(p=>p===i?null:i)} style={{flexShrink:0,padding:"5px 11px",borderRadius:20,fontSize:10,fontWeight:600,cursor:"pointer",border:`1.5px solid ${activeRound===i?"var(--primary)":i===getGroup().openRound?"var(--chip-open)":"var(--border)"}`,background:activeRound===i?"var(--primary)":"var(--surface)",color:activeRound===i?"white":i===getGroup().openRound?"var(--chip-open)":"var(--text-soft)",whiteSpace:"nowrap"}}>
+            {d}{i===getGroup().openRound?" ✦":""}
+          </div>
+        ))}
+      </div>
+
+      <div style={{margin:"12px 20px 0",borderRadius:18,overflow:"hidden",border:"1px solid var(--border)",background:"var(--surface)",overflowX:"auto",scrollbarWidth:"none"}}>
+        <table style={{borderCollapse:"collapse",minWidth:"100%"}}>
+          <thead>
+            <tr>
+              <th style={{position:"sticky",left:0,background:"var(--primary-deep)",fontSize:8,color:"rgba(255,255,255,0.3)",fontWeight:700,padding:"5px 12px",textAlign:"left",minWidth:150,zIndex:5,boxShadow:"2px 0 8px rgba(0,0,0,0.2)"}}>MEMBER</th>
+              {visibleCols.map(i=><th key={i} style={{background:"var(--primary-deep)",fontSize:7,color:"rgba(255,255,255,0.3)",fontWeight:700,padding:"5px 2px",textAlign:"center",whiteSpace:"nowrap"}}>{months[i]}</th>)}
+            </tr>
+            <tr>
+              <th style={{position:"sticky",left:0,background:"var(--primary-deep)",fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.5)",padding:"8px 12px",textAlign:"left",minWidth:150,zIndex:5,boxShadow:"2px 0 8px rgba(0,0,0,0.2)"}}>Hand</th>
+              {visibleCols.map(i=>(
+                <th key={i} onClick={()=>setActiveRound(p=>p===i?null:i)} style={{background:activeRound===i?"var(--accent)":"var(--primary-deep)",fontSize:9,fontWeight:600,color:activeRound===i?"white":i===getGroup().openRound?"var(--gold-light)":"rgba(255,255,255,0.5)",padding:"8px 2px",textAlign:"center",minWidth:42,cursor:"pointer",whiteSpace:"nowrap"}}>{days[i]}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(m=>(
+              <tr key={m.id} style={{background:"inherit"}}>
+                <td style={{position:"sticky",left:0,background:"var(--surface)",padding:"10px 12px",fontSize:12,fontWeight:500,color:"var(--text)",whiteSpace:"nowrap",minWidth:150,borderBottom:"1px solid var(--border)",zIndex:4,boxShadow:"2px 0 8px rgba(0,0,0,0.08)"}}>
+                  {m.name}
+                  <div style={{fontSize:9,color:"var(--accent)",marginTop:2,fontWeight:500}}>{m.pay} · Slot {m.pi+1}</div>
+                </td>
+                {visibleCols.map(di=>{
+                  const isPayoutSlot = m.pi===di;
+                  const paid = isPaid(m.id,di);
+                  const isOpen = di===getGroup().openRound;
+                  return (
+                    <td key={di} onClick={()=>!isPayoutSlot&&togglePayment(m.id,di)} style={{textAlign:"center",verticalAlign:"middle",height:42,width:42,minWidth:42,borderBottom:"1px solid var(--border)",borderRight:"1px solid var(--border)",cursor:isPayoutSlot?"default":"pointer",background:isOpen&&!isPayoutSlot?"rgba(201,144,106,0.04)":"inherit"}}>
+                      {isPayoutSlot
+                        ? <div style={{width:24,height:24,borderRadius:6,background:"var(--shimmer)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11}}>{theme==="rosegold"?"🌸":"💰"}</div>
+                        : paid
+                          ? <div style={{width:20,height:20,borderRadius:"50%",background:"var(--green)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"white",fontWeight:700}}>✓</div>
+                          : isOpen
+                            ? <div style={{width:20,height:20,borderRadius:"50%",border:"1.5px dashed var(--open-dot)",display:"inline-block"}}/>
+                            : <div style={{width:20,height:20,borderRadius:"50%",border:"1.5px solid var(--border)",display:"inline-block"}}/>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <OrgNav current="grid" goTo={goTo} pendingCount={0}/>
+    </div>
+  );
+}
+
+function OrgSchedule({members, goTo, openTheme}) {
+  const PAID_THROUGH = getGroup().paidThrough;
+  const paidCount = members.filter(m=>m.pi<=PAID_THROUGH).length;
+  return (
+    <div>
+      <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 32px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60}}/>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:34,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Pot <em style={{color:"var(--gold-light)"}}>Schedule</em></div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>Harvest Table · Oct 2025 – Jun 2026</div>
+        <SettingsBtn onClick={openTheme}/>
+        <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
+      </div>
+      <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
+        {[[paidCount,"Paid out"],[getTotalHands()-paidCount,"Remaining"],["$"+(getTotalHands()*getPotValue()).toLocaleString(),"Full cycle"]].map(([v,l],i)=>(
+          <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:16}:{}}>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{v}</div>
+            <div style={{fontSize:10,color:"var(--text-soft)",marginTop:3}}>{l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{padding:"var(--pad) var(--pad) 0"}}>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13}}>Payout Order</div>
+        <div className="resp-grid">
+        {members.map(m=>{
+          const status = m.pi<=getGroup().paidThrough?"paid":m.pi===getGroup().openRound?"current":"upcoming";
+          return (
+            <div key={m.id} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)",marginBottom:9,display:"flex",alignItems:"center",gap:14}}>
+              <div style={{width:42,height:42,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:700,flexShrink:0,background:status==="paid"?"var(--green-bg)":status==="current"?"var(--header-grad)":"var(--bg-mid)",color:status==="paid"?"var(--green)":"white"}}>
+                {status==="paid"?"✓":m.pi+1}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>{m.name}</div>
+                <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>{getDateLabels()[m.pi]} · {status==="paid"?"Disbursed":status==="current"?"This round — open now ✦":"Upcoming"}</div>
+              </div>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:19,fontWeight:700,color:status==="paid"?"var(--green)":status==="current"?"var(--accent)":"var(--text-soft)",flexShrink:0}}>${getPotValue().toLocaleString()}</div>
+            </div>
+          );
+        })}
+        </div>
+      </div>
+      <OrgNav current="schedule" goTo={goTo} pendingCount={0}/>
+    </div>
+  );
+}
+
+// ─── GROUP SETUP SCREEN ───────────────────────────────────────────────────────
+function OrgSetup({goTo, openTheme, showAlert, theme}) {
+  const [step, setStep]           = useState(1); // 1=details, 2=preview
+  const [groupName, setGroupName] = useState("");
+  const [handAmount, setHandAmount] = useState("");
+  const [frequency, setFrequency] = useState(null);
+  const [startDate, setStartDate] = useState("");
+  const [numRounds, setNumRounds] = useState(19);
+  const [errors, setErrors]       = useState({});
+  const [generatedDates, setGeneratedDates] = useState([]);
+
+  const freqOptions = [
+    {key:"weekly",    label:"Weekly",    desc:"Every 7 days",  icon:"7"},
+    {key:"bi-weekly", label:"Bi-weekly", desc:"Every 14 days", icon:"14"},
+    {key:"monthly",   label:"Monthly",   desc:"Once a month",  icon:"30"},
+  ];
+
+  const validate = () => {
+    const e = {};
+    if (!groupName.trim()) e.groupName = "Give your group a name";
+    if (!handAmount || isNaN(handAmount) || Number(handAmount) <= 0) e.handAmount = "Enter a valid amount";
+    if (!frequency) e.frequency = "Choose a frequency";
+    if (!startDate) e.startDate = "Pick a start date";
+    if (numRounds < 2 || numRounds > 52) e.numRounds = "Choose between 2 and 52 rounds";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleGenerate = () => {
+    if (!validate()) { showAlert("Please complete all fields"); return; }
+    const dates = generateCycleDates(startDate, frequency, numRounds);
+    setGeneratedDates(dates);
+    setStep(2);
+  };
+
+  const handleConfirm = () => {
+    const group = {
+      name: groupName.trim(),
+      handAmount: Number(handAmount),
+      frequency,
+      startDate: fromInputDate(startDate),
+      endDate: generatedDates[generatedDates.length - 1],
+      dates: generatedDates,
+      numRounds,
+      createdAt: new Date().toISOString(),
+    };
+    saveCreatedGroup(group);
+    showAlert(`${groupName} created ✦`);
+    goTo("home");
+  };
+
+  const potPreview = numRounds * Number(handAmount || 0);
+  const cyclePreview = numRounds * numRounds * Number(handAmount || 0);
+
+  const hdr = (title, subtitle) => (
+    <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 36px",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",width:140,height:140,borderRadius:"50%",background:"radial-gradient(circle,rgba(196,120,138,0.12) 0%,transparent 70%)",bottom:10,left:-40,pointerEvents:"none"}}/>
+      <div onClick={()=>step===2?setStep(1):goTo("home")} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:500,color:"rgba(255,255,255,0.55)",cursor:"pointer",marginBottom:14,position:"relative"}}>← {step===2?"Edit details":"Back"}</div>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>{title}</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative",lineHeight:1.5}}>{subtitle}</div>
+      <SettingsBtn onClick={openTheme}/>
+      <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
+    </div>
+  );
+
+  const card = (title, sub, children) => (
+    <div style={{background:"var(--surface)",borderRadius:20,padding:22,border:"1px solid var(--border)",margin:"14px var(--pad) 0",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)",borderRadius:"20px 20px 0 0"}}/>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)",marginBottom:4,marginTop:4}}>{title}</div>
+      <div style={{fontSize:11,color:"var(--text-soft)",marginBottom:18,lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>{sub}</div>
+      {children}
+    </div>
+  );
+
+  const fieldLabel = (text) => (
+    <label style={{fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"var(--text-mid)",marginBottom:8,display:"block",fontFamily:"'Jost',sans-serif"}}>{text}</label>
+  );
+
+  const inputStyle = (hasError) => ({
+    width:"100%",padding:"13px 15px",border:`1.5px solid ${hasError?"#E05555":"var(--border)"}`,
+    borderRadius:13,fontFamily:"'Jost',sans-serif",fontSize:14,color:"var(--text)",
+    background:"var(--bg)",outline:"none"
+  });
+
+  const errorMsg = (msg) => msg ? <div style={{fontSize:10,color:"#E05555",fontWeight:600,marginTop:4,fontFamily:"'Jost',sans-serif"}}>⚠ {msg}</div> : null;
+
+  // ── STEP 2: PREVIEW ────────────────────────────────────────────────────────
+  if (step === 2) {
+    const amt = Number(handAmount);
+    const lastDate = generatedDates[generatedDates.length - 1];
+    return (
+      <div>
+        {hdr(
+          <>{groupName} <em style={{color:"var(--gold-light)"}}>Preview</em></>,
+          "Review your generated schedule before confirming."
+        )}
+
+        {/* Summary stats */}
+        <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
+          {[[numRounds,"Rounds"],[`$${amt}`,"Per hand"],[frequency.charAt(0).toUpperCase()+frequency.slice(1),"Frequency"]].map(([v,l],i)=>(
+            <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:16}:{}}>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{v}</div>
+              <div style={{fontSize:10,color:"var(--text-soft)",marginTop:3}}>{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Timeline info */}
+        <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>📅</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:500,color:"var(--primary)",fontFamily:"'Jost',sans-serif"}}>{generatedDates[0]} → {lastDate}</div>
+            <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>Full cycle · {numRounds} rounds</div>
+          </div>
+        </div>
+
+        {/* Pot math */}
+        <div style={{margin:"14px var(--pad) 0",background:"var(--header-grad)",borderRadius:20,padding:22,position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)"}}/>
+          <div style={{position:"absolute",width:150,height:150,borderRadius:"50%",background:"radial-gradient(circle,rgba(255,255,255,0.07) 0%,transparent 70%)",top:-40,right:-40,pointerEvents:"none"}}/>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>Pot math preview</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.55)",lineHeight:1.8,fontFamily:"'Jost',sans-serif"}}>
+            If all {numRounds} slots fill, each round's pot will be <strong style={{color:"var(--gold-light)",fontFamily:"'Cormorant Garamond',serif",fontSize:16}}>${(numRounds * amt).toLocaleString()}</strong> and the full cycle will move <strong style={{color:"var(--gold-light)",fontFamily:"'Cormorant Garamond',serif",fontSize:16}}>${(numRounds * numRounds * amt).toLocaleString()}</strong>.
+          </div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:8,fontFamily:"'Jost',sans-serif"}}>Final numbers depend on how many members join.</div>
+        </div>
+
+        {/* Date list */}
+        <div style={{padding:"var(--pad) var(--pad) 0"}}>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13,fontFamily:"'Jost',sans-serif"}}>Generated Dates</div>
+          <div className="resp-grid" style={{display:"flex",flexDirection:"column",gap:8}}>
+            {generatedDates.map((d, i) => {
+              const label = d.replace(/, \d{4}$/, match => match);
+              return (
+                <div key={i} style={{background:"var(--surface)",borderRadius:14,padding:"12px 16px",border:"1px solid var(--border)",display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:34,height:34,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0,background:i===0?"var(--header-grad)":"var(--bg-mid)",color:i===0?"white":"var(--text-soft)",fontFamily:"'Cormorant Garamond',serif"}}>{i+1}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{d}</div>
+                    <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{i===0?"Organizer payout (Slot 1)":"Open slot"}</div>
+                  </div>
+                  {i===0 && <div style={{fontSize:10,fontWeight:600,padding:"4px 11px",borderRadius:20,background:"var(--accent-pale)",color:"var(--primary)",border:"1px solid var(--border)",fontFamily:"'Jost',sans-serif"}}>You</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Confirm button */}
+        <div style={{padding:"24px var(--pad) 0"}}>
+          <button onClick={handleConfirm} style={{width:"100%",padding:18,background:"var(--header-grad)",color:"white",border:"none",borderRadius:18,fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,cursor:"pointer",boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}>Confirm &amp; Create Group ✦</button>
+          <div style={{fontSize:11,color:"var(--text-soft)",textAlign:"center",marginTop:10,lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>You can share the onboarding link after creating the group.<br/>Members will submit their preferences through it.</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── STEP 1: DETAILS ────────────────────────────────────────────────────────
+  return (
+    <div>
+      {hdr(
+        <>New <em style={{color:"var(--gold-light)"}}>Circle</em></>,
+        "Set up your group details. The app will generate your full schedule of dates automatically."
+      )}
+
+      {/* Group name */}
+      {card("Name your circle", "This is how your group will appear to members.",
+        <>
+          {fieldLabel("Group name")}
+          <input value={groupName} onChange={e=>{setGroupName(e.target.value);setErrors(p=>({...p,groupName:null}));}} placeholder="e.g. Sisterhood Circle" style={inputStyle(errors.groupName)}/>
+          {errorMsg(errors.groupName)}
+        </>
+      )}
+
+      {/* Hand amount */}
+      {card("How much per hand?", "Each member pays this amount per hand, per round. Everyone pays the same.",
+        <>
+          {fieldLabel("Amount per hand")}
+          <div style={{position:"relative"}}>
+            <span style={{position:"absolute",left:15,top:"50%",transform:"translateY(-50%)",fontSize:16,fontWeight:600,color:"var(--text-mid)",fontFamily:"'Cormorant Garamond',serif"}}>$</span>
+            <input type="number" value={handAmount} onChange={e=>{setHandAmount(e.target.value);setErrors(p=>({...p,handAmount:null}));}} placeholder="100" style={{...inputStyle(errors.handAmount),paddingLeft:32}}/>
+          </div>
+          {errorMsg(errors.handAmount)}
+          {handAmount && Number(handAmount) > 0 && (
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              {[["$"+Number(handAmount).toLocaleString(),"Per hand / round"],["$"+(Number(handAmount)*numRounds).toLocaleString(),`Pot if ${numRounds} hands`]].map(([v,l],i)=>(
+                <div key={i} style={{flex:1,background:"var(--bg)",borderRadius:12,padding:"10px 12px",border:"1px solid var(--border)"}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{v}</div>
+                  <div style={{fontSize:9,color:"var(--text-soft)",marginTop:3,fontFamily:"'Jost',sans-serif"}}>{l}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Frequency */}
+      {card("How often do members pay?", "This sets the rhythm for the whole cycle.",
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+            {freqOptions.map(f=>(
+              <div key={f.key} onClick={()=>{setFrequency(f.key);setErrors(p=>({...p,frequency:null}));}} style={{border:`2px solid ${frequency===f.key?"var(--primary)":"var(--border)"}`,borderRadius:14,padding:"16px 8px",textAlign:"center",cursor:"pointer",background:frequency===f.key?"var(--accent-pale)":"var(--bg)"}}>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{f.icon}</div>
+                <div style={{fontSize:12,fontWeight:600,color:frequency===f.key?"var(--primary)":"var(--text)",marginTop:6,fontFamily:"'Jost',sans-serif"}}>{f.label}</div>
+                <div style={{fontSize:9,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{f.desc}</div>
+              </div>
+            ))}
+          </div>
+          {errorMsg(errors.frequency)}
+        </>
+      )}
+
+      {/* Start date */}
+      {card("When does the first round start?", "Slot 1 is always reserved for the organizer. Your first payout happens on this date.",
+        <>
+          {fieldLabel("Start date")}
+          <input type="date" value={startDate} onChange={e=>{setStartDate(e.target.value);setErrors(p=>({...p,startDate:null}));}} style={inputStyle(errors.startDate)}/>
+          {errorMsg(errors.startDate)}
+        </>
+      )}
+
+      {/* Number of rounds */}
+      {card("How many rounds?", "This determines how many payout slots your group will have. One slot per hand.",
+        <>
+          {fieldLabel("Number of rounds")}
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div onClick={()=>numRounds>2&&setNumRounds(n=>n-1)} style={{width:44,height:44,borderRadius:12,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>−</div>
+            <div style={{flex:1,textAlign:"center"}}>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:42,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{numRounds}</div>
+              <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>rounds</div>
+            </div>
+            <div onClick={()=>numRounds<52&&setNumRounds(n=>n+1)} style={{width:44,height:44,borderRadius:12,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>+</div>
+          </div>
+          {errorMsg(errors.numRounds)}
+          {frequency && startDate && (
+            <div style={{marginTop:14,background:"var(--bg)",borderRadius:12,padding:"12px 14px",border:"1px solid var(--border)"}}>
+              <div style={{fontSize:11,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",lineHeight:1.6}}>
+                With {numRounds} {frequency} rounds starting {fromInputDate(startDate)}, your cycle ends around <strong style={{color:"var(--primary)"}}>{generateCycleDates(startDate, frequency, numRounds).pop()}</strong>.
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Generate button */}
+      <div style={{padding:"24px var(--pad) 0"}}>
+        <button onClick={handleGenerate} style={{width:"100%",padding:18,background:"var(--header-grad)",color:"white",border:"none",borderRadius:18,fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,cursor:"pointer",boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}>Generate Schedule Preview</button>
+        <div style={{fontSize:11,color:"var(--text-soft)",textAlign:"center",marginTop:10,lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>You'll review all generated dates before confirming.</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── GROUP EDIT SCREEN ────────────────────────────────────────────────────────
+function OrgEdit({goTo, openTheme, showAlert, theme}) {
+  const store = useStore();
+  const { members, group } = store;
+  const [section, setSection] = useState("details"); // details | members | rounds
+  const [editingMember, setEditingMember] = useState(null);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPay, setNewPay] = useState(null);
+  const [newHands, setNewHands] = useState(1);
+  const [confirmRemove, setConfirmRemove] = useState(null);
+  const [addRoundCount, setAddRoundCount] = useState(1);
+
+  // Inline edit states for group details
+  const [eName, setEName] = useState(group.name);
+  const [eAmount, setEAmount] = useState(String(group.handAmount));
+  const [eFreq, setEFreq] = useState(group.frequency.toLowerCase());
+  const [ePaid, setEPaid] = useState(group.paidThrough);
+  const [eOpen, setEOpen] = useState(group.openRound);
+  const [detailsDirty, setDetailsDirty] = useState(false);
+
+  const markDirty = () => setDetailsDirty(true);
+
+  const saveDetails = () => {
+    const changes = {};
+    if (eName !== group.name) changes.name = eName;
+    if (Number(eAmount) !== group.handAmount && Number(eAmount) > 0) changes.handAmount = Number(eAmount);
+    if (eFreq !== group.frequency.toLowerCase()) changes.frequency = eFreq.charAt(0).toUpperCase() + eFreq.slice(1);
+    if (ePaid !== group.paidThrough) changes.paidThrough = ePaid;
+    if (eOpen !== group.openRound) changes.openRound = eOpen;
+    if (Object.keys(changes).length > 0) {
+      updateGroup(changes);
+      showAlert("Group details saved ✦");
+    }
+    setDetailsDirty(false);
+  };
+
+  const handleAddMember = () => {
+    if (!newName.trim() || !newPay) { showAlert("Fill in name and payment method"); return; }
+    addMember({ name: newName.trim(), pay: newPay.charAt(0).toUpperCase() + newPay.slice(1), hands: newHands });
+    showAlert(`${newName} added ✦`);
+    setNewName(""); setNewPay(null); setNewHands(1); setShowAddMember(false);
+  };
+
+  const handleRemoveMember = (id) => {
+    const m = members.find(x => x.id === id);
+    removeMember(id);
+    showAlert(`${m?.name} removed`);
+    setConfirmRemove(null);
+  };
+
+  const handleAddRounds = () => {
+    addRounds(addRoundCount);
+    showAlert(`${addRoundCount} round${addRoundCount > 1 ? "s" : ""} added ✦`);
+  };
+
+  const TOTAL = getTotalHands();
+  const POT = getPotValue();
+  const DL = getDateLabels();
+
+  const hdr = (
+    <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 32px",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60,pointerEvents:"none"}}/>
+      <div onClick={()=>goTo("home")} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:500,color:"rgba(255,255,255,0.55)",cursor:"pointer",marginBottom:14,position:"relative"}}>← Back</div>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Edit <em style={{color:"var(--gold-light)"}}>{group.name}</em></div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>{TOTAL} hands · ${group.handAmount}/hand · {group.frequency}</div>
+      <SettingsBtn onClick={openTheme}/>
+      <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
+    </div>
+  );
+
+  // Section tabs
+  const tabs = (
+    <div style={{display:"flex",gap:6,padding:"var(--pad) var(--pad) 0"}}>
+      {[["details","⚙","Details"],["members","👥","Members"],["rounds","📅","Rounds"]].map(([id,icon,label])=>(
+        <div key={id} onClick={()=>setSection(id)} style={{flex:1,padding:"12px 8px",borderRadius:14,textAlign:"center",cursor:"pointer",background:section===id?"var(--primary)":"var(--surface)",border:`1.5px solid ${section===id?"var(--primary)":"var(--border)"}`,color:section===id?"white":"var(--text-soft)"}}>
+          <div style={{fontSize:16,lineHeight:1}}>{icon}</div>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:1,textTransform:"uppercase",marginTop:4,fontFamily:"'Jost',sans-serif"}}>{label}</div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const fieldLabel = (text) => (
+    <label style={{fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"var(--text-mid)",marginBottom:8,display:"block",fontFamily:"'Jost',sans-serif"}}>{text}</label>
+  );
+  const inputStyle = {width:"100%",padding:"13px 15px",border:"1.5px solid var(--border)",borderRadius:13,fontFamily:"'Jost',sans-serif",fontSize:14,color:"var(--text)",background:"var(--bg)",outline:"none"};
+
+  return (
+    <div>
+      {hdr}
+      {tabs}
+
+      {/* ── DETAILS SECTION ── */}
+      {section === "details" && (
+        <div style={{padding:"0 0 var(--pad)"}}>
+          <div style={{background:"var(--surface)",borderRadius:20,padding:22,border:"1px solid var(--border)",margin:"14px var(--pad) 0",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)",borderRadius:"20px 20px 0 0"}}/>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)",marginBottom:18,marginTop:4}}>Group Settings</div>
+
+            <div style={{marginBottom:16}}>
+              {fieldLabel("Group name")}
+              <input value={eName} onChange={e=>{setEName(e.target.value);markDirty();}} style={inputStyle}/>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              {fieldLabel("Amount per hand")}
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:15,top:"50%",transform:"translateY(-50%)",fontSize:16,fontWeight:600,color:"var(--text-mid)",fontFamily:"'Cormorant Garamond',serif"}}>$</span>
+                <input type="number" value={eAmount} onChange={e=>{setEAmount(e.target.value);markDirty();}} style={{...inputStyle,paddingLeft:32}}/>
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              {fieldLabel("Frequency")}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                {[["weekly","Weekly"],["bi-weekly","Bi-weekly"],["monthly","Monthly"]].map(([k,l])=>(
+                  <div key={k} onClick={()=>{setEFreq(k);markDirty();}} style={{border:`2px solid ${eFreq===k?"var(--primary)":"var(--border)"}`,borderRadius:12,padding:"10px 6px",textAlign:"center",cursor:"pointer",background:eFreq===k?"var(--accent-pale)":"var(--bg)"}}>
+                    <div style={{fontSize:12,fontWeight:600,color:eFreq===k?"var(--primary)":"var(--text)",fontFamily:"'Jost',sans-serif"}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              {fieldLabel("Current round (paid through)")}
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div onClick={()=>{if(ePaid>0){setEPaid(p=>p-1);markDirty();}}} style={{width:38,height:38,borderRadius:10,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>−</div>
+                <div style={{flex:1,textAlign:"center"}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{ePaid + 1}</div>
+                  <div style={{fontSize:9,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>of {group.dates.length} rounds paid</div>
+                </div>
+                <div onClick={()=>{if(ePaid<group.dates.length-1){setEPaid(p=>p+1);markDirty();}}} style={{width:38,height:38,borderRadius:10,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>+</div>
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              {fieldLabel("Open round")}
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div onClick={()=>{if(eOpen>0){setEOpen(p=>p-1);markDirty();}}} style={{width:38,height:38,borderRadius:10,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>−</div>
+                <div style={{flex:1,textAlign:"center"}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:700,color:"var(--gold)",lineHeight:1}}>{eOpen + 1}</div>
+                  <div style={{fontSize:9,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Round {eOpen + 1} · {DL[eOpen] || "—"}</div>
+                </div>
+                <div onClick={()=>{if(eOpen<group.dates.length-1){setEOpen(p=>p+1);markDirty();}}} style={{width:38,height:38,borderRadius:10,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>+</div>
+              </div>
+            </div>
+
+            {detailsDirty && (
+              <button onClick={saveDetails} style={{width:"100%",padding:16,background:"var(--header-grad)",color:"white",border:"none",borderRadius:16,fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,cursor:"pointer",marginTop:6}}>Save Changes ✦</button>
+            )}
+          </div>
+
+          {/* Live math preview */}
+          <div style={{margin:"14px var(--pad) 0",background:"var(--header-grad)",borderRadius:18,padding:18,position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)"}}/>
+            <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",marginBottom:10,fontFamily:"'Jost',sans-serif"}}>Live math</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+              {[[TOTAL,"Hands"],["$"+POT.toLocaleString(),"Pot/round"],["$"+(TOTAL*POT).toLocaleString(),"Full cycle"]].map(([v,l],i)=>(
+                <div key={i}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,color:"white",lineHeight:1}}>{v}</div>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,0.5)",marginTop:3,fontFamily:"'Jost',sans-serif"}}>{l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MEMBERS SECTION ── */}
+      {section === "members" && (
+        <div style={{padding:"14px var(--pad) var(--pad)"}}>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13,fontFamily:"'Jost',sans-serif"}}>
+            {TOTAL} member{TOTAL!==1?"s":""} · {group.dates.length} slots
+          </div>
+
+          {/* Member list */}
+          {[...members].sort((a,b)=>a.pi-b.pi).map(m => {
+            const isEditing = editingMember === m.id;
+            return (
+              <div key={m.id} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:`1px solid ${isEditing?"var(--primary)":"var(--border)"}`,marginBottom:9,position:"relative",overflow:"hidden"}}>
+                {isEditing && <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)"}}/>}
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:38,height:38,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,flexShrink:0,background:"var(--header-grad)",color:"white",fontFamily:"'Cormorant Garamond',serif"}}>{m.pi+1}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{m.name}</div>
+                    <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{m.pay} · {m.hands} hand{m.hands>1?"s":""} · {DL[m.pi]} (Slot {m.pi+1})</div>
+                  </div>
+                  <div onClick={()=>setEditingMember(isEditing?null:m.id)} style={{width:30,height:30,borderRadius:8,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,cursor:"pointer",color:"var(--primary)",flexShrink:0}}>✎</div>
+                </div>
+
+                {isEditing && (
+                  <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid var(--border)"}}>
+                    <div style={{marginBottom:12}}>
+                      {fieldLabel("Name")}
+                      <input defaultValue={m.name} onBlur={e => { if (e.target.value.trim() && e.target.value !== m.name) { updateMember(m.id, {name: e.target.value.trim()}); showAlert("Name updated"); }}} style={inputStyle}/>
+                    </div>
+                    <div style={{marginBottom:12}}>
+                      {fieldLabel("Payment method")}
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                        {[["Zelle","💙"],["Venmo","💜"],["Cash App","💚"]].map(([p,icon])=>(
+                          <div key={p} onClick={()=>{updateMember(m.id,{pay:p});showAlert(`Payment updated to ${p}`);}} style={{border:`2px solid ${m.pay===p?"var(--primary)":"var(--border)"}`,borderRadius:10,padding:"8px 4px",textAlign:"center",cursor:"pointer",background:m.pay===p?"var(--accent-pale)":"var(--bg)",fontSize:11,fontWeight:600,color:m.pay===p?"var(--primary)":"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>{icon} {p}</div>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{marginBottom:12}}>
+                      {fieldLabel("Hands")}
+                      <div style={{display:"flex",gap:6}}>
+                        {[1,2,3,4].map(n=>(
+                          <div key={n} onClick={()=>{updateMember(m.id,{hands:n});showAlert(`Hands updated to ${n}`);}} style={{width:44,height:44,borderRadius:10,border:`2px solid ${m.hands===n?"var(--primary)":"var(--border)"}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",background:m.hands===n?"var(--accent-pale)":"var(--bg)",fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:700,color:"var(--primary)"}}>{n}</div>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{marginBottom:12}}>
+                      {fieldLabel("Move to date")}
+                      <div style={{fontSize:10,color:"var(--text-soft)",marginBottom:8,fontFamily:"'Jost',sans-serif",lineHeight:1.5}}>Tap a date to move {m.name} there. If someone already has that slot, they'll swap into {m.name}'s current spot.</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto",scrollbarWidth:"thin"}}>
+                        {getGroup().dates.map((d, di) => {
+                          const occupant = members.find(x => x.pi === di);
+                          const isCurrent = di === m.pi;
+                          const dateLabel = d.replace(/, 20\d{2}/, "");
+                          return (
+                            <div key={di} onClick={()=>{
+                              if (!isCurrent) {
+                                const displaced = moveMemberToSlot(m.id, di);
+                                showAlert(displaced ? `${m.name} → ${dateLabel} (swapped with ${displaced.name})` : `${m.name} → ${dateLabel}`);
+                                setEditingMember(null);
+                              }
+                            }} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:10,cursor:isCurrent?"default":"pointer",border:`1.5px solid ${isCurrent?"var(--primary)":"var(--border)"}`,background:isCurrent?"var(--accent-pale)":"var(--bg)",opacity:isCurrent?0.7:1}}>
+                              <div style={{width:24,height:24,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,flexShrink:0,background:isCurrent?"var(--primary)":"var(--bg-mid)",color:isCurrent?"white":"var(--text-soft)",fontFamily:"'Cormorant Garamond',serif"}}>{di+1}</div>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:12,fontWeight:500,color:"var(--text)",fontFamily:"'Jost',sans-serif"}}>{dateLabel}</div>
+                              </div>
+                              <div style={{fontSize:10,color:isCurrent?"var(--primary)":"var(--text-soft)",fontWeight:500,fontFamily:"'Jost',sans-serif"}}>{isCurrent?"Current":occupant?occupant.name:"Open"}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <button onClick={()=>setConfirmRemove(m.id)} style={{width:"100%",padding:12,borderRadius:12,border:"1.5px solid #E05555",background:"transparent",color:"#E05555",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>Remove {m.name} from group</button>
+
+                    {confirmRemove === m.id && (
+                      <div style={{marginTop:10,background:"#FFF0F0",borderRadius:12,padding:14,border:"1px solid #E05555"}}>
+                        <div style={{fontSize:12,fontWeight:600,color:"#C03030",marginBottom:8,fontFamily:"'Jost',sans-serif"}}>Are you sure? This will remove {m.name} and reindex all slots.</div>
+                        <div style={{display:"flex",gap:8}}>
+                          <button onClick={()=>handleRemoveMember(m.id)} style={{flex:1,padding:10,borderRadius:10,border:"none",background:"#E05555",color:"white",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>Yes, remove</button>
+                          <button onClick={()=>setConfirmRemove(null)} style={{flex:1,padding:10,borderRadius:10,border:"1.5px solid var(--border)",background:"var(--surface)",color:"var(--text-soft)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Add member */}
+          {!showAddMember ? (
+            <div onClick={()=>setShowAddMember(true)} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1.5px dashed var(--border)",display:"flex",alignItems:"center",gap:12,cursor:"pointer",marginTop:4}}>
+              <div style={{width:38,height:38,borderRadius:10,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,color:"var(--primary)",fontWeight:700}}>+</div>
+              <div>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>Add Member</div>
+                <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>New member gets the next available slot</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{background:"var(--surface)",borderRadius:20,padding:22,border:"1.5px solid var(--primary)",position:"relative",overflow:"hidden",marginTop:4}}>
+              <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)",borderRadius:"20px 20px 0 0"}}/>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,color:"var(--text)",marginBottom:16,marginTop:4}}>Add New Member</div>
+              <div style={{marginBottom:12}}>
+                {fieldLabel("Name")}
+                <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Aunya" style={inputStyle}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                {fieldLabel("Payment method")}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                  {[["zelle","💙","Zelle"],["venmo","💜","Venmo"],["cashapp","💚","Cash App"]].map(([k,icon,label])=>(
+                    <div key={k} onClick={()=>setNewPay(k)} style={{border:`2px solid ${newPay===k?"var(--primary)":"var(--border)"}`,borderRadius:10,padding:"10px 4px",textAlign:"center",cursor:"pointer",background:newPay===k?"var(--accent-pale)":"var(--bg)",fontSize:11,fontWeight:600,color:newPay===k?"var(--primary)":"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>{icon} {label}</div>
+                  ))}
+                </div>
+              </div>
+              <div style={{marginBottom:16}}>
+                {fieldLabel("Hands")}
+                <div style={{display:"flex",gap:6}}>
+                  {[1,2,3,4].map(n=>(
+                    <div key={n} onClick={()=>setNewHands(n)} style={{width:44,height:44,borderRadius:10,border:`2px solid ${newHands===n?"var(--primary)":"var(--border)"}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",background:newHands===n?"var(--accent-pale)":"var(--bg)",fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:700,color:"var(--primary)"}}>{n}</div>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={handleAddMember} style={{flex:1,padding:14,borderRadius:14,border:"none",background:"var(--header-grad)",color:"white",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Cormorant Garamond',serif"}}>Add to Group ✦</button>
+                <button onClick={()=>{setShowAddMember(false);setNewName("");setNewPay(null);setNewHands(1);}} style={{padding:"14px 18px",borderRadius:14,border:"1.5px solid var(--border)",background:"var(--surface)",color:"var(--text-soft)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ROUNDS SECTION ── */}
+      {section === "rounds" && (
+        <div style={{padding:"14px var(--pad) var(--pad)"}}>
+          {/* Current cycle info */}
+          <div style={{background:"var(--surface)",borderRadius:20,padding:20,border:"1px solid var(--border)",marginBottom:14}}>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)",marginBottom:14}}>Current Cycle</div>
+            {[["Total rounds", group.dates.length],["Start date", group.dates[0]],["End date", group.dates[group.dates.length-1]],["Frequency", group.frequency],["Rounds completed", group.paidThrough + 1],["Remaining", group.dates.length - group.paidThrough - 1]].map(([k,v],i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:i<5?"1px solid var(--border)":"none"}}>
+                <span style={{fontSize:12,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>{k}</span>
+                <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Add rounds */}
+          <div style={{background:"var(--surface)",borderRadius:20,padding:22,border:"1px solid var(--border)",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)",borderRadius:"20px 20px 0 0"}}/>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)",marginBottom:4,marginTop:4}}>Extend the Cycle</div>
+            <div style={{fontSize:11,color:"var(--text-soft)",marginBottom:18,lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>Add more rounds if new members join or someone wants additional hands. New dates continue from where the current cycle ends.</div>
+
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+              <div onClick={()=>addRoundCount>1&&setAddRoundCount(n=>n-1)} style={{width:44,height:44,borderRadius:12,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>−</div>
+              <div style={{flex:1,textAlign:"center"}}>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:42,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{addRoundCount}</div>
+                <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>round{addRoundCount>1?"s":""} to add</div>
+              </div>
+              <div onClick={()=>addRoundCount<20&&setAddRoundCount(n=>n+1)} style={{width:44,height:44,borderRadius:12,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>+</div>
+            </div>
+
+            <div style={{background:"var(--bg)",borderRadius:12,padding:"12px 14px",border:"1px solid var(--border)",marginBottom:16}}>
+              <div style={{fontSize:11,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",lineHeight:1.6}}>
+                Adding {addRoundCount} round{addRoundCount>1?"s":""} will extend the cycle to <strong style={{color:"var(--primary)"}}>{group.dates.length + addRoundCount} total rounds</strong>, ending around <strong style={{color:"var(--primary)"}}>{generateCycleDates(group.dates[group.dates.length-1], group.frequency.toLowerCase(), addRoundCount+1).pop()}</strong>.
+              </div>
+            </div>
+
+            <button onClick={handleAddRounds} style={{width:"100%",padding:16,background:"var(--header-grad)",color:"white",border:"none",borderRadius:16,fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,cursor:"pointer"}}>Add {addRoundCount} Round{addRoundCount>1?"s":""} ✦</button>
+          </div>
+
+          {/* All dates list */}
+          <div style={{marginTop:18}}>
+            <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13,fontFamily:"'Jost',sans-serif"}}>All {group.dates.length} Dates</div>
+            <div className="resp-grid">
+            {group.dates.map((d, i) => {
+              const member = members.find(m => m.pi === i);
+              const isPast = i <= group.paidThrough;
+              const isCurrent = i === group.openRound;
+              return (
+                <div key={i} style={{background:"var(--surface)",borderRadius:12,padding:"10px 14px",border:`1px solid ${isCurrent?"var(--gold)":"var(--border)"}`,marginBottom:6,display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:28,height:28,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0,background:isPast?"var(--green-bg)":isCurrent?"var(--header-grad)":"var(--bg-mid)",color:isPast?"var(--green)":isCurrent?"white":"var(--text-soft)",fontFamily:"'Cormorant Garamond',serif"}}>{isPast?"✓":i+1}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:500,color:"var(--text)",fontFamily:"'Jost',sans-serif"}}>{d}</div>
+                    <div style={{fontSize:10,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>{member ? member.name : "Open slot"}{isCurrent?" · Current":""}</div>
+                  </div>
+                </div>
+              );
+            })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SCHEDULE DRAFT SCREEN ────────────────────────────────────────────────────
+function OrgGenerate({submissions, goTo, openTheme, showAlert, theme}) {
+  const approved = submissions.filter(s => s.status === "approved");
+  const [result, setResult] = useState(null);
+  const [applied, setApplied] = useState(false);
+  const g = getGroup();
+  const DL = getDateLabels();
+
+  useEffect(() => {
+    if (approved.length > 0 && !result) {
+      setResult(generateSchedule(approved));
+    }
+  }, [approved.length]);
+
+  const methodLabel = m => {
+    if (m === "organizer") return "Organizer (always Slot 1)";
+    if (m === "1st choice") return "Got their 1st choice ✦";
+    if (m === "2nd choice") return "1st taken → got 2nd choice";
+    if (m === "closest available") return "Both picks taken → closest open date";
+    return m;
+  };
+
+  const methodColor = m => {
+    if (m === "organizer") return "var(--gold)";
+    if (m === "1st choice") return "var(--green)";
+    if (m === "2nd choice") return "var(--accent)";
+    return "var(--text-soft)";
+  };
+
+  const handleApply = () => {
+    applySchedule(result);
+    setApplied(true);
+    showAlert("Schedule applied ✦ Members are set!");
+  };
+
+  return (
+    <div>
+      <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 36px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60,pointerEvents:"none"}}/>
+        <div onClick={()=>goTo("inbox")} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:500,color:"rgba(255,255,255,0.55)",cursor:"pointer",marginBottom:14,position:"relative"}}>← Back to Inbox</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Draft <em style={{color:"var(--gold-light)"}}>Schedule</em></div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative",lineHeight:1.5}}>Review how slots were assigned. Apply when you're satisfied, or go back and adjust submissions.</div>
+        <SettingsBtn onClick={openTheme}/>
+        <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
+      </div>
+
+      {!result ? (
+        <div style={{padding:"40px var(--pad)",textAlign:"center",color:"var(--text-soft)",fontSize:13}}>No approved submissions to generate from.</div>
+      ) : applied ? (
+        <div style={{padding:"var(--pad)"}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",padding:"30px 0"}}>
+            <div style={{width:80,height:80,borderRadius:"50%",background:"var(--green-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,marginBottom:20}}>✓</div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:600,color:"var(--text)",marginBottom:8}}>Schedule <em style={{color:"var(--gold)"}}>Applied</em></div>
+            <div style={{fontSize:13,color:"var(--text-soft)",lineHeight:1.6,marginBottom:24,fontFamily:"'Jost',sans-serif"}}>All {result.assignments.length} slots have been assigned. Your tracker, schedule view, and member views are updated.</div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>goTo("grid")} style={{padding:"14px 24px",background:"var(--header-grad)",color:"white",border:"none",borderRadius:14,fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,cursor:"pointer"}}>View Tracker</button>
+              <button onClick={()=>goTo("schedule")} style={{padding:"14px 24px",background:"var(--surface)",color:"var(--primary)",border:"1.5px solid var(--border)",borderRadius:14,fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,cursor:"pointer"}}>View Schedule</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div>
+          {/* Stats summary */}
+          <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
+            {[[result.assignments.length,"Slots filled"],[g.dates.length - result.assignments.length,"Open slots"],[result.unassigned.length,"Unassigned"]].map(([v,l],i)=>(
+              <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:16}:{}}>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:i===2&&v>0?"#E05555":"var(--primary)",lineHeight:1}}>{v}</div>
+                <div style={{fontSize:10,color:"var(--text-soft)",marginTop:3}}>{l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Method breakdown */}
+          <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)"}}>
+            <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:10,fontFamily:"'Jost',sans-serif"}}>How slots were assigned</div>
+            {["organizer","1st choice","2nd choice","closest available"].map(m => {
+              const count = result.assignments.filter(a => a.method === m).length;
+              if (count === 0) return null;
+              return (
+                <div key={m} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0"}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:methodColor(m),flexShrink:0}}/>
+                  <div style={{fontSize:12,color:"var(--text)",fontFamily:"'Jost',sans-serif",flex:1}}>{methodLabel(m)}</div>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:700,color:"var(--primary)"}}>{count}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Assignment list */}
+          <div style={{padding:"var(--pad) var(--pad) 0"}}>
+            <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13,fontFamily:"'Jost',sans-serif"}}>Slot Assignments</div>
+            <div className="resp-grid">
+            {result.assignments.map((a, i) => (
+              <div key={i} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)",marginBottom:9,position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:a.method==="organizer"?"var(--shimmer)":"transparent"}}/>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:40,height:40,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0,background:a.method==="organizer"?"var(--header-grad)":"var(--bg-mid)",color:a.method==="organizer"?"white":"var(--text-soft)",fontFamily:"'Cormorant Garamond',serif"}}>{a.slotIndex+1}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{a.name}</div>
+                    <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{DL[a.slotIndex]} · {a.pay}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:10,fontWeight:600,color:methodColor(a.method),fontFamily:"'Jost',sans-serif"}}>{a.method === "organizer" ? "Organizer" : a.method}</div>
+                  </div>
+                </div>
+                {a.method !== "organizer" && (
+                  <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid var(--border)",fontSize:10,color:"var(--text-soft)",lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>
+                    Wanted: <strong style={{color:"var(--text-mid)"}}>{a.prefFirst ? a.prefFirst.replace(/, 20\d{2}/,"") : "—"}</strong> (1st)
+                    {a.prefSecond && <> · <strong style={{color:"var(--text-mid)"}}>{a.prefSecond.replace(/, 20\d{2}/,"")}</strong> (2nd)</>}
+                    {a.method !== "1st choice" && <> → <span style={{color:methodColor(a.method)}}>{a.method === "2nd choice" ? "got 2nd" : "nearest open"}</span></>}
+                  </div>
+                )}
+              </div>
+            ))}
+            </div>
+          </div>
+
+          {/* Unassigned warning */}
+          {result.unassigned.length > 0 && (
+            <div style={{margin:"14px var(--pad) 0",background:"#FFF0F0",borderRadius:16,padding:"14px 16px",border:"1px solid #E05555"}}>
+              <div style={{fontSize:12,fontWeight:600,color:"#C03030",marginBottom:6,fontFamily:"'Jost',sans-serif"}}>⚠ {result.unassigned.length} hand{result.unassigned.length>1?"s":""} couldn't be assigned</div>
+              <div style={{fontSize:11,color:"#C03030",lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>There aren't enough open slots. You can add rounds in the Edit screen, or remove submissions and regenerate.</div>
+            </div>
+          )}
+
+          {/* Apply / back buttons */}
+          <div style={{padding:"24px var(--pad) 0"}}>
+            <button onClick={handleApply} style={{width:"100%",padding:18,background:"var(--header-grad)",color:"white",border:"none",borderRadius:18,fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,cursor:"pointer",boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}>Apply This Schedule ✦</button>
+            <div style={{fontSize:11,color:"var(--text-soft)",textAlign:"center",marginTop:10,lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>This will replace your current member list with the generated assignments. You can still edit individual slots afterward.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrgInbox({pending, submissions, goTo, openTheme, showAlert}) {
+  const approved = submissions ? submissions.filter(s => s.status === "approved") : [];
+  const canGenerate = approved.length > 0;
+  return (
+    <div>
+      <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 32px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60}}/>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:34,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Member <em style={{color:"var(--gold-light)"}}>Inbox</em></div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>Review submissions and generate your schedule</div>
+        <SettingsBtn onClick={openTheme}/>
+        <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
+      </div>
+
+      {/* Generate Schedule button */}
+      {canGenerate && (
+        <div style={{padding:"var(--pad) var(--pad) 0"}}>
+          <div onClick={()=>goTo("generate")} style={{background:"var(--header-grad)",borderRadius:18,padding:"18px 20px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",boxShadow:"0 8px 24px rgba(0,0,0,0.15)",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)"}}/>
+            <div style={{width:44,height:44,borderRadius:12,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>⚡</div>
+            <div>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,color:"white"}}>Generate Schedule</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.55)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{approved.length} approved submission{approved.length!==1?"s":""} ready · Tap to assign slots</div>
+            </div>
+            <div style={{marginLeft:"auto",width:28,height:28,borderRadius:8,background:"rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"white",flexShrink:0}}>→</div>
+          </div>
+        </div>
+      )}
+
+      {/* Approved list */}
+      {approved.length > 0 && (
+        <div style={{padding:"var(--pad) var(--pad) 0"}}>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13}}>
+            Approved — {approved.length}
+          </div>
+          {approved.map(s => {
+            const pm = {zelle:"💙 Zelle",venmo:"💜 Venmo",cashapp:"💚 Cash App"}[s.payMethod]||s.payMethod;
+            return (
+              <div key={s.id} style={{background:"var(--surface)",borderRadius:16,padding:"12px 16px",border:"1px solid var(--border)",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:34,height:34,borderRadius:"50%",background:"var(--green-bg)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"var(--green)",fontWeight:700,flexShrink:0}}>✓</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:14,fontWeight:500,color:"var(--text)",fontFamily:"'Jost',sans-serif"}}>{s.nickname}</div>
+                  <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{s.hands} hand{s.hands>1?"s":""} · {pm}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{padding:"var(--pad) var(--pad) 0"}}>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13}}>
+          Pending — {pending.length} submission{pending.length!==1?"s":""}
+        </div>
+        {pending.length===0 ? (
+          <div style={{fontSize:13,color:"var(--text-soft)",textAlign:"center",padding:"30px 0"}}>
+            No pending submissions.<br/>Share your onboarding link to invite members.
+          </div>
+        ) : pending.map(s=>{
+          const pm = {zelle:"💙 Zelle",venmo:"💜 Venmo",cashapp:"💚 Cash App"}[s.payMethod]||s.payMethod;
+          return (
+            <div key={s.id} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)",marginBottom:10,display:"flex",alignItems:"flex-start",gap:12}}>
+              <div style={{width:40,height:40,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:700,color:"white",flexShrink:0}}>{s.nickname.slice(0,2).toUpperCase()}</div>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{s.nickname}</div>
+                <div style={{fontSize:11,color:"var(--text-soft)",marginTop:3,lineHeight:1.6}}>{s.hands} hand{s.hands>1?"s":""} · {pm}<br/>${s.hands*getGroup().handAmount}/round · ${s.hands*getPotValue()} total payout</div>
+                {s.prefs.map((p,hi)=>(
+                  <div key={hi} style={{fontSize:10,color:"var(--accent)",fontWeight:600,marginTop:4}}>
+                    {s.hands>1?`H${hi+1}: `:""}1st {p.first.replace(", 2025","").replace(", 2026","")} · 2nd {p.second.replace(", 2025","").replace(", 2026","")}
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:6,marginTop:8}}>
+                  <button onClick={()=>{approveSubmission(s.id);showAlert(`${s.nickname} approved ✦`);}} style={{padding:"6px 14px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",border:"none",background:"var(--green-bg)",color:"var(--green)",fontFamily:"'Jost',sans-serif"}}>✓ Approve</button>
+                  <button onClick={()=>{dismissSubmission(s.id);showAlert("Submission removed");}} style={{padding:"6px 14px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",border:"none",background:"var(--bg-mid)",color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>Remove</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <OrgNav current="inbox" goTo={goTo} pendingCount={pending.length}/>
+    </div>
+  );
+}
+
+// ─── ONBOARDING ───────────────────────────────────────────────────────────────
+function OnboardingApp({theme, changeTheme, showAlert}) {
+  const [showTheme, setShowTheme] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [sub, setSub]             = useState(null);
+  const [nickname,  setNickname]  = useState("");
+  const [payMethod, setPayMethod] = useState(null);
+  const [hands, setHands]         = useState(1);
+  const [prefs, setPrefs]         = useState([{first:null,second:null}]);
+  const [errors, setErrors]       = useState({});
+
+  const changeHands = n => {
+    setHands(n);
+    setPrefs(prev=>{const next=[...prev];while(next.length<n)next.push({first:null,second:null});return next.slice(0,n);});
+  };
+  const setPref = (hi,choice,date) => {
+    setPrefs(prev=>{
+      const next=[...prev]; const h={...next[hi]};
+      if(choice==="first"){if(h.second===date)h.second=null;h.first=h.first===date?null:date;}
+      else{if(h.first===date)h.first=null;h.second=h.second===date?null:date;}
+      next[hi]=h; return next;
+    });
+  };
+  const validate = () => {
+    const e={};
+    if(!nickname.trim())e.nickname="Please enter your name";
+    if(!payMethod)e.payMethod="Choose a payment method";
+    prefs.forEach((p,i)=>{if(!p.first)e[`pf${i}`]="Choose a 1st preference";if(!p.second)e[`ps${i}`]="Choose a 2nd preference";});
+    setErrors(e); return Object.keys(e).length===0;
+  };
+  const handleSubmit = () => {
+    if(!validate()){showAlert("Please complete all fields");return;}
+    const result = submitOnboarding({nickname,payMethod,hands,prefs});
+    setSub(result); setSubmitted(true);
+  };
+  const pm = {zelle:"💙 Zelle",venmo:"💜 Venmo",cashapp:"💚 Cash App"}[payMethod];
+
+  const hdr = (title,sub) => (
+    <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 36px",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60}}/>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:8,position:"relative"}}>Pardna</div>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>{title}</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:6,position:"relative",fontWeight:300,lineHeight:1.5}}>{sub}</div>
+      <SettingsBtn onClick={()=>setShowTheme(true)}/>
+      <div style={{position:"absolute",bottom:-1,left:0,right:0,height:28,background:"var(--bg)",borderRadius:"28px 28px 0 0"}}/>
+    </div>
+  );
+
+  const card = (title, sub, children) => (
+    <div style={{background:"var(--surface)",borderRadius:20,padding:22,border:"1px solid var(--border)",margin:"14px var(--pad) 0",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)",borderRadius:"20px 20px 0 0"}}/>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)",marginBottom:4,marginTop:4}}>{title}</div>
+      <div style={{fontSize:11,color:"var(--text-soft)",marginBottom:18,lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>{sub}</div>
+      {children}
+    </div>
+  );
+
+  if (submitted && sub) return (
+    <div>
+      {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 28px",textAlign:"center",minHeight:"70vh"}}>
+        <div style={{width:90,height:90,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,marginBottom:24,boxShadow:"0 12px 40px rgba(0,0,0,0.18)"}}>🌸</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:"var(--text)",lineHeight:1.1,marginBottom:10}}>You're <em style={{color:"var(--gold)"}}>in</em>,<br/>{nickname}!</div>
+        <div style={{fontSize:13,color:"var(--text-soft)",lineHeight:1.7,marginBottom:32}}>Your preferences have been sent to your organizer. Once everyone submits, you'll receive your personal Pardna link.</div>
+        <div style={{background:"var(--surface)",borderRadius:20,padding:20,border:"1px solid var(--border)",width:"100%",marginBottom:24,textAlign:"left"}}>
+          {[["Group",getGroup().name],["Hands",`${hands} hand${hands>1?"s":""}`],["Per round","$"+hands*getGroup().handAmount],["Pay via",pm||"—"],["Payout","$"+hands*getPotValue()],...prefs.flatMap((p,hi)=>[[hands>1?`H${hi+1} 1st`:"1st pick",p.first?.replace(", 2025","").replace(", 2026","")],[hands>1?`H${hi+1} 2nd`:"2nd pick",p.second?.replace(", 2025","").replace(", 2026","")]])].map(([k,v])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid var(--border)"}}>
+              <span style={{fontSize:11,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>{k}</span>
+              <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{v}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:"var(--text-soft)",lineHeight:1.5}}>Switch to the <strong style={{color:"var(--primary)"}}>Organizer</strong> view using the bar below to see your submission in the inbox.</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
+      {hdr(<>Join the <em style={{color:"var(--gold-light)"}}>Circle</em></>, <>You've been invited to {getGroup().name}.<br/>Fill this out so your organizer can build your schedule.</>)}
+
+      {/* Group banner */}
+      <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:18,border:"1px solid var(--border)",display:"flex",gap:14,alignItems:"center"}}>
+        <div style={{width:46,height:46,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:700,color:"white",flexShrink:0}}>{getGroup().organizer}</div>
+        <div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,color:"var(--text)"}}>{getGroup().name}</div>
+          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:3,lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>${getGroup().handAmount}/hand · {getGroup().frequency}<br/>{getGroup().startDate} – {getGroup().endDate}</div>
+          <div style={{display:"inline-flex",alignItems:"center",gap:5,background:"var(--accent-pale)",border:"1px solid var(--border)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:600,color:"var(--primary)",marginTop:6}}>🌹 {getTotalHands()} hands total</div>
+        </div>
+      </div>
+
+      {/* Name */}
+      {card("What should we call you?","This is how your name will appear in the group.",
+        <>
+          <label style={{fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"var(--text-mid)",marginBottom:8,display:"block",fontFamily:"'Jost',sans-serif"}}>Preferred name</label>
+          <input className={errors.nickname?"err":""} value={nickname} onChange={e=>{setNickname(e.target.value);setErrors(p=>({...p,nickname:null}));}} placeholder="e.g. Aunya" style={{width:"100%",padding:"13px 15px",border:`1.5px solid ${errors.nickname?"#E05555":"var(--border)"}`,borderRadius:13,fontFamily:"'Jost',sans-serif",fontSize:14,color:"var(--text)",background:"var(--bg)",outline:"none",marginBottom:errors.nickname?0:4}}/>
+          {errors.nickname&&<div style={{fontSize:10,color:"#E05555",fontWeight:600,marginTop:4,fontFamily:"'Jost',sans-serif"}}>⚠ {errors.nickname}</div>}
+        </>
+      )}
+
+      {/* Payment */}
+      {card("How will you send payments?","Your organizer will send you a request each round via this method.",
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:4}}>
+            {[["zelle","💙","Zelle"],["venmo","💜","Venmo"],["cashapp","💚","Cash App"]].map(([k,icon,label])=>(
+              <div key={k} onClick={()=>{setPayMethod(k);setErrors(p=>({...p,payMethod:null}));}} style={{border:`2px solid ${payMethod===k?"var(--primary)":"var(--border)"}`,borderRadius:14,padding:"14px 8px",textAlign:"center",cursor:"pointer",background:payMethod===k?"var(--accent-pale)":"var(--bg)"}}>
+                <div style={{fontSize:24,marginBottom:5}}>{icon}</div>
+                <div style={{fontSize:12,fontWeight:600,color:payMethod===k?"var(--primary)":"var(--text)",fontFamily:"'Jost',sans-serif"}}>{label}</div>
+              </div>
+            ))}
+          </div>
+          {errors.payMethod&&<div style={{fontSize:10,color:"#E05555",fontWeight:600,marginTop:8,fontFamily:"'Jost',sans-serif"}}>⚠ {errors.payMethod}</div>}
+        </>
+      )}
+
+      {/* Hands */}
+      {card("How many hands?",`Each hand costs $${getGroup().handAmount}/round and earns you one $${getPotValue().toLocaleString()} payout.`,
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+          {[1,2,3,4].map(n=>(
+            <div key={n} onClick={()=>changeHands(n)} style={{border:`2px solid ${hands===n?"var(--primary)":"var(--border)"}`,borderRadius:13,padding:"12px 6px",textAlign:"center",cursor:"pointer",background:hands===n?"var(--accent-pale)":"var(--bg)"}}>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{n}</div>
+              <div style={{fontSize:9,color:"var(--text-soft)",marginTop:3,fontWeight:600,textTransform:"uppercase",fontFamily:"'Jost',sans-serif"}}>{n===1?"hand":"hands"}</div>
+              <div style={{fontSize:9,color:"var(--accent)",marginTop:3,fontWeight:600,fontFamily:"'Jost',sans-serif"}}>${getGroup().handAmount*n}/rnd</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Date prefs */}
+      {card("Payout preferences","Pick 2 preferred dates per hand. Your organizer will match your first choice where possible, then second, then closest available.",
+        prefs.map((pref,hi)=>(
+          <div key={hi} style={{background:"var(--bg)",borderRadius:15,padding:16,marginBottom:12,border:"1px solid var(--border)"}}>
+            {hands>1&&<div style={{fontSize:10,fontWeight:700,letterSpacing:2,textTransform:"uppercase",color:"var(--accent)",marginBottom:12,fontFamily:"'Jost',sans-serif"}}>Hand {hi+1}</div>}
+            {[["first","1st choice",`pf${hi}`],["second","2nd choice",`ps${hi}`]].map(([choice,clabel,ekey])=>(
+              <div key={choice} style={{marginBottom:choice==="second"?0:12}}>
+                <span style={{fontSize:10,fontWeight:600,color:"var(--text-soft)",marginBottom:6,display:"block",fontFamily:"'Jost',sans-serif"}}>{clabel}</span>
+                <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none"}}>
+                  {getGroup().dates.map(d=>{
+                    const label=d.replace(", 2025","").replace(", 2026","");
+                    const isSelected = pref[choice]===d;
+                    const isDisabled = (choice==="first"?pref.second:pref.first)===d;
+                    return (
+                      <div key={d} onClick={()=>{if(!isDisabled){setPref(hi,choice,d);setErrors(p=>({...p,[ekey]:null}));}}} style={{flexShrink:0,padding:"7px 13px",borderRadius:20,fontSize:11,fontWeight:600,cursor:isDisabled?"default":"pointer",border:`1.5px solid ${isSelected?"var(--primary)":"var(--border)"}`,background:isSelected?"var(--primary)":"var(--surface)",color:isSelected?"white":"var(--text-soft)",opacity:isDisabled?0.32:1,whiteSpace:"nowrap",fontFamily:"'Jost',sans-serif"}}>
+                        {label}
+                      </div>
+                    );
+                  })}
+                </div>
+                {errors[ekey]&&<div style={{fontSize:10,color:"#E05555",fontWeight:600,marginTop:6,fontFamily:"'Jost',sans-serif"}}>⚠ {errors[ekey]}</div>}
+              </div>
+            ))}
+          </div>
+        ))
+      )}
+
+      {/* Summary */}
+      {nickname&&payMethod&&(
+        <div style={{background:"var(--header-grad)",borderRadius:20,margin:"14px var(--pad) 0",padding:22,position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)"}}/>
+          <div style={{position:"absolute",width:150,height:150,borderRadius:"50%",background:"radial-gradient(circle,rgba(255,255,255,0.07) 0%,transparent 70%)",top:-40,right:-40,pointerEvents:"none"}}/>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>Your summary</div>
+          {[["Name",nickname],["Group",getGroup().name],["Hands",`${hands} hand${hands>1?"s":""}`],["Per round","$"+hands*getGroup().handAmount],["Pay via",pm||"—"],["Payout","$"+hands*getPotValue()]].map(([k,v])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.55)",fontFamily:"'Jost',sans-serif"}}>{k}</span>
+              <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:k==="Payout"?"var(--gold-light)":"white"}}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{padding:"var(--pad) var(--pad) 0"}}>
+        <button onClick={handleSubmit} style={{width:"100%",padding:18,background:"var(--header-grad)",color:"white",border:"none",borderRadius:18,fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,cursor:"pointer"}}>Submit &amp; Join the Circle</button>
+        <div style={{fontSize:11,color:"var(--text-soft)",textAlign:"center",marginTop:10,lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>Your preferences will be sent to your organizer.<br/>They'll finalize the schedule and share your personal link.</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MEMBER VIEW ──────────────────────────────────────────────────────────────
+function MemberApp({theme, changeTheme, showAlert}) {
+  const store = useStore();
+  const { members } = store;
+  const [showTheme, setShowTheme] = useState(false);
+  const VIEWING_AS   = "Aunya";
+  const PAID_THROUGH = getGroup().paidThrough;
+  const OPEN_ROUND   = getGroup().openRound;
+  const member       = members.find(m=>m.name===VIEWING_AS)||members[0];
+  const firstName    = member.name.replace(/\s*\(.*\)/,"").split(" ")[0];
+  const payoutDate   = getDateLabels()[member.pi];
+  const payoutDone   = member.pi<=PAID_THROUGH;
+  const isPayoutNow  = member.pi===OPEN_ROUND;
+  const openPaid     = isPaid(member.id, OPEN_ROUND);
+  const payoutIcon   = theme==="rosegold"?"🌸":"💰";
+
+  return (
+    <div style={{paddingBottom:20}}>
+      {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
+
+      {/* Hero */}
+      <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 40px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",width:240,height:240,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.2) 0%,transparent 70%)",top:-80,right:-80,pointerEvents:"none"}}/>
+        <div style={{position:"absolute",width:160,height:160,borderRadius:"50%",background:"radial-gradient(circle,rgba(196,120,138,0.14) 0%,transparent 70%)",bottom:0,left:-50,pointerEvents:"none"}}/>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:10,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:20,position:"relative"}}>Pardna</div>
+        <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,var(--accent),var(--gold))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:"white",border:"3px solid rgba(255,255,255,0.25)",marginBottom:14,position:"relative"}}>{avatarLetters(member.name)}</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:13,color:"rgba(255,255,255,0.5)",position:"relative",marginBottom:4}}>Welcome back,</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:"white",lineHeight:1.05,position:"relative"}}>{firstName} <em style={{color:"var(--gold-light)"}}>✦</em></div>
+        <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.18)",borderRadius:20,padding:"5px 13px",fontSize:11,color:"rgba(255,255,255,0.65)",marginTop:10,position:"relative",fontWeight:500,fontFamily:"'Jost',sans-serif"}}>
+          {theme==="rosegold"?"🌹":"✦"} Harvest Table · $100/hand · Slot {member.pi+1} of {getTotalHands()}
+        </div>
+        <SettingsBtn onClick={()=>setShowTheme(true)}/>
+        <div style={{position:"absolute",bottom:-1,left:0,right:0,height:28,background:"var(--bg)",borderRadius:"28px 28px 0 0"}}/>
+      </div>
+
+      {/* Payout hero */}
+      <div style={{margin:"24px var(--pad) 0",background:"var(--header-grad)",borderRadius:24,padding:24,position:"relative",overflow:"hidden",boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:3,borderRadius:"24px 24px 0 0",background:"var(--shimmer)"}}/>
+        <div style={{position:"absolute",width:160,height:160,borderRadius:"50%",background:"radial-gradient(circle,rgba(255,255,255,0.06) 0%,transparent 70%)",top:-40,right:-40,pointerEvents:"none"}}/>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",marginBottom:8,fontFamily:"'Jost',sans-serif"}}>{payoutDone?"Your payout — received":"Your payout — coming up"}</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:52,fontWeight:700,color:"white",lineHeight:1}}>
+          <span style={{fontSize:26,color:"var(--gold-light)",verticalAlign:"top",marginTop:10,display:"inline-block"}}>$</span>{getPotValue().toLocaleString()}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.12)"}}>
+          <div style={{width:32,height:32,borderRadius:8,background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{payoutDone?"✓":isPayoutNow?payoutIcon:"📅"}</div>
+          <div>
+            <div style={{fontSize:14,fontWeight:500,color:"white",fontFamily:"'Jost',sans-serif"}}>{payoutDate}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:1,fontFamily:"'Jost',sans-serif"}}>
+              {payoutDone?"Disbursed — thank you for your trust":isPayoutNow?"This round — your payout is coming":`${member.pi-OPEN_ROUND} round${member.pi-OPEN_ROUND!==1?"s":""} away`}
+            </div>
+          </div>
+          <div style={{marginLeft:"auto",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"6px 12px",fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontWeight:600,color:"var(--gold-light)",flexShrink:0}}>Slot {member.pi+1}</div>
+        </div>
+      </div>
+
+      {/* Open round banner */}
+      {isPayoutNow ? (
+        <div style={{margin:"14px var(--pad) 0",borderRadius:18,padding:"16px 18px",display:"flex",alignItems:"center",gap:14,border:"1.5px solid var(--green)",background:"var(--surface)"}}>
+          <div style={{width:44,height:44,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,background:"var(--green-bg)"}}>{payoutIcon}</div>
+          <div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>Your payout round!</div>
+            <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Feb 27 · ${getPotValue().toLocaleString()} coming to you</div>
+          </div>
+          <div style={{marginLeft:"auto",fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,color:"var(--green)",flexShrink:0}}>${getPotValue().toLocaleString()}</div>
+        </div>
+      ):(
+        <div style={{margin:"14px var(--pad) 0",borderRadius:18,padding:"16px 18px",display:"flex",alignItems:"center",gap:14,border:`1.5px solid ${openPaid?"var(--green)":"var(--accent)"}`,background:"var(--surface)"}}>
+          <div style={{width:44,height:44,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,background:openPaid?"var(--green-bg)":"var(--accent-pale)"}}>{openPaid?"✓":"💳"}</div>
+          <div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>{openPaid?"Round 11 — paid":"Round 11 — open now"}</div>
+            <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{openPaid?"Feb 27 · Thank you!":`Due Feb 27 · Send via ${member.pay}`}</div>
+          </div>
+          <div style={{marginLeft:"auto",fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,flexShrink:0,color:openPaid?"var(--green)":"var(--primary)"}}>{openPaid?"✓":"$"+getGroup().handAmount}</div>
+        </div>
+      )}
+
+      {/* Payment history */}
+      <div style={{padding:"24px var(--pad) 0"}}>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>Your payment history</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(68px, 1fr))",gap:8}}>
+          {getDateLabels().map((d,di)=>{
+            const [mon,day]=d.split(" ");
+            const isPayoutSlot=member.pi===di;
+            const paid=isPaid(member.id,di);
+            const status=isPayoutSlot?"payout":di<OPEN_ROUND?"paid":di===OPEN_ROUND?"open":"future";
+            return (
+              <div key={di} style={{background:status==="payout"?"var(--header-grad)":status==="future"?"var(--bg)":"var(--surface)",borderRadius:14,padding:"10px 6px 8px",border:`1px ${status==="open"?"dashed":"solid"} ${status==="payout"?"transparent":status==="open"?"var(--gold)":"var(--border)"}`,textAlign:"center"}}>
+                <div style={{fontSize:8,fontWeight:700,letterSpacing:"0.5px",textTransform:"uppercase",color:status==="payout"?"rgba(255,255,255,0.6)":"var(--text-soft)",marginBottom:4,fontFamily:"'Jost',sans-serif"}}>{mon}</div>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:700,color:status==="payout"?"white":status==="future"?"var(--text-soft)":"var(--primary)",lineHeight:1,opacity:status==="future"?0.6:1}}>{day}</div>
+                <div style={{marginTop:5,display:"flex",justifyContent:"center"}}>
+                  {isPayoutSlot
+                    ? <span style={{fontSize:13,lineHeight:1}}>{payoutIcon}</span>
+                    : status==="paid"
+                      ? <div style={{width:16,height:16,borderRadius:"50%",background:"var(--green)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"white",fontWeight:700}}>✓</div>
+                      : status==="open"
+                        ? paid
+                          ? <div style={{width:16,height:16,borderRadius:"50%",background:"var(--green)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"white",fontWeight:700}}>✓</div>
+                          : <div style={{width:16,height:16,borderRadius:"50%",border:"1.5px dashed var(--gold)"}}/>
+                        : <div style={{width:16,height:16,borderRadius:"50%",border:"1.5px solid var(--border)"}}/>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* My Payment Dates */}
+      <div style={{padding:"24px var(--pad) 0"}}>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>My payment dates</div>
+        <div className="resp-grid" style={{display:"flex",flexDirection:"column",gap:8}}>
+          {getDateLabels().map((d,di)=>{
+            const isPayoutSlot = member.pi===di;
+            const paid = isPaid(member.id, di);
+            const status = isPayoutSlot?"payout":di<OPEN_ROUND?"paid":di===OPEN_ROUND?"open":"upcoming";
+            const statusLabel = isPayoutSlot?"Your payout 🎉":status==="paid"?"Paid":status==="open"?"Due now":"Upcoming";
+            const amountLabel = isPayoutSlot?`+$${getPotValue().toLocaleString()}`:`-$${getGroup().handAmount}`;
+            const amountColor = isPayoutSlot?"var(--green)":status==="paid"?"var(--text-soft)":status==="open"?"var(--primary)":"var(--text-soft)";
+            const rowBg = isPayoutSlot?"var(--accent-pale)":status==="open"?"var(--surface)":"var(--surface)";
+            const borderColor = isPayoutSlot?"var(--accent)":status==="open"?"var(--gold)":"var(--border)";
+            const iconBg = isPayoutSlot?"var(--header-grad)":status==="paid"?"var(--green-bg)":status==="open"?"var(--accent-pale)":"var(--bg-mid)";
+            const iconColor = isPayoutSlot?"white":status==="paid"?"var(--green)":"var(--text-soft)";
+            const iconContent = isPayoutSlot?payoutIcon:status==="paid"||paid?"✓":di+1;
+            return (
+              <div key={di} style={{background:rowBg,borderRadius:16,padding:"13px 16px",border:`1px solid ${borderColor}`,display:"flex",alignItems:"center",gap:14,position:"relative",overflow:"hidden"}}>
+                {isPayoutSlot&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:"var(--shimmer)"}}/>}
+                <div style={{width:36,height:36,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:isPayoutSlot?18:status==="paid"||paid?14:13,fontWeight:700,flexShrink:0,background:iconBg,color:iconColor,fontFamily:"'Cormorant Garamond',serif"}}>
+                  {iconContent}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{d}</div>
+                  <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{statusLabel}</div>
+                </div>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:700,color:amountColor,flexShrink:0}}>{amountLabel}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{margin:"28px var(--pad) 0",background:"var(--surface)",borderRadius:18,padding:"18px 20px",border:"1px solid var(--border)",display:"flex",alignItems:"center",gap:14}}>
+        <div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:600,color:"var(--primary)"}}>Pard<em style={{color:"var(--gold)"}}>na</em></div>
+          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Harvest Table · 2025–2026</div>
+        </div>
+        <div style={{marginLeft:"auto",fontSize:11,color:"var(--accent)",fontWeight:500,textAlign:"right",fontFamily:"'Jost',sans-serif"}}>Questions?<br/><span style={{color:"var(--primary)",fontWeight:600}}>Contact your organizer</span></div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
