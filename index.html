@@ -10,7 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { min-height: 100vh; background: #1a0a0a; }
@@ -40,28 +40,8 @@ const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 
 let supabase = null;
 try {
-  // Try every known export pattern for the Supabase UMD bundle
-  const g = window;
-  const candidates = [
-    g.supabase?.createClient,
-    g.supabase?.supabase?.createClient,
-    g.supabase?.default?.createClient,
-    g.Supabase?.createClient,
-    g.createClient,
-  ];
-  const createClient = candidates.find(fn => typeof fn === "function");
-  if (createClient) {
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
-    console.log("Supabase client created successfully");
-  } else {
-    // Log everything we can find for debugging
-    const sb = g.supabase;
-    console.error("Supabase createClient not found.", 
-      "window.supabase type:", typeof sb,
-      "window.supabase keys:", sb ? Object.getOwnPropertyNames(sb).slice(0,10) : "N/A",
-      "window.supabase proto:", sb ? Object.getOwnPropertyNames(Object.getPrototypeOf(sb) || {}).slice(0,10) : "N/A"
-    );
-  }
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  console.log("Supabase client created successfully");
 } catch (e) {
   console.error("Failed to initialize Supabase:", e);
 }
