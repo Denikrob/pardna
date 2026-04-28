@@ -827,8 +827,9 @@ function OrganizerApp({theme, changeTheme, showAlert}) {
 
 function OrgHome({members, pending, submissions, goTo, openTheme}) {
   const PAID_THROUGH = getGroup().paidThrough;
+  const OPEN_ROUND   = getGroup().openRound;
   const pct = Math.round(((PAID_THROUGH+1)/getTotalHands())*100);
-  const nextMember = members.find(m=>m.pi===getGroup().openRound);
+  const nextMember = members.find(m=>m.pi===OPEN_ROUND);
   const approved = (submissions||[]).filter(s=>s.status==="approved");
 
   return (
