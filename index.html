@@ -457,6 +457,13 @@ function togglePayment(memberId, roundIndex) {
   notify();
   persistPayment(memberId, roundIndex, newVal);
 }
+function setPayment(memberId, roundIndex, paid) {
+  const key = `${memberId}-${roundIndex}`;
+  _state = {..._state, paymentOverrides:{..._state.paymentOverrides,[key]:paid}};
+  notify();
+  persistPayment(memberId, roundIndex, paid);
+}
+
 function isPaid(memberId, roundIndex) {
   const key = `${memberId}-${roundIndex}`;
   const m   = _state.members.find(x => x.id === memberId);
@@ -832,7 +839,7 @@ function OrgHome({members, pending, submissions, goTo, openTheme}) {
         <div style={{position:"absolute",width:140,height:140,borderRadius:"50%",background:"radial-gradient(circle,rgba(196,120,138,0.12) 0%,transparent 70%)",bottom:10,left:-40,pointerEvents:"none"}}/>
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:34,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Your <em style={{color:"var(--gold-light)"}}>Circle</em></div>
-        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>Tuesday, February 24, 2026</div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>{new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
         <div style={{position:"absolute",top:48,right:62,width:42,height:42,borderRadius:"50%",background:"linear-gradient(135deg,var(--accent),var(--gold))",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:700,color:"white",border:"2px solid rgba(255,255,255,0.25)"}}>AR</div>
         <SettingsBtn onClick={openTheme}/>
         <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
@@ -867,7 +874,7 @@ function OrgHome({members, pending, submissions, goTo, openTheme}) {
       <div style={{margin:"10px var(--pad) 0",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:16,padding:"13px 16px",display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:36,height:36,borderRadius:10,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>🔔</div>
         <div>
-          <div style={{fontSize:13,fontWeight:500,color:"var(--primary)"}}>Round 11 opens Feb 27</div>
+          <div style={{fontSize:13,fontWeight:500,color:"var(--primary)"}}>Round {OPEN_ROUND+1} opens {(getGroup().dates[OPEN_ROUND]||"").replace(/, \d{4}/,"")}</div>
           <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>Payout to {nextMember?.name} · ${getPotValue().toLocaleString()} pot</div>
         </div>
       </div>
@@ -942,6 +949,8 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
   const [editIndividual, setEditIndividual] = useState({});
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragValue, setDragValue] = useState(null);
   const months = getDateLabels().map(d=>d.split(" ")[0]);
   const days   = getDateLabels().map(d=>d.split(" ")[1]);
   const filtered = members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase()));
@@ -1072,8 +1081,8 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
         ))}
       </div>
 
-      <div style={{margin:"12px 20px 0",borderRadius:18,overflow:"hidden",border:"1px solid var(--border)",background:"var(--surface)",overflowX:"auto",scrollbarWidth:"none"}}>
-        <table style={{borderCollapse:"collapse",minWidth:"100%"}}>
+      <div style={{margin:"12px 20px 0",borderRadius:18,overflow:"hidden",border:"1px solid var(--border)",background:"var(--surface)",overflowX:"auto",scrollbarWidth:"thin",scrollbarColor:"var(--border) transparent"}}>
+        <table onMouseUp={()=>setIsDragging(false)} onMouseLeave={()=>setIsDragging(false)} style={{borderCollapse:"collapse",minWidth:"100%"}}>
           <thead>
             <tr>
               <th style={{position:"sticky",left:0,background:"var(--primary-deep)",fontSize:8,color:"rgba(255,255,255,0.3)",fontWeight:700,padding:"5px 12px",textAlign:"left",minWidth:150,zIndex:5,boxShadow:"2px 0 8px rgba(0,0,0,0.2)"}}>MEMBER</th>
@@ -1098,7 +1107,11 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
                   const paid = isPaid(m.id,di);
                   const isOpen = di===getGroup().openRound;
                   return (
-                    <td key={di} onClick={()=>!isPayoutSlot&&togglePayment(m.id,di)} style={{textAlign:"center",verticalAlign:"middle",height:42,width:42,minWidth:42,borderBottom:"1px solid var(--border)",borderRight:"1px solid var(--border)",cursor:isPayoutSlot?"default":"pointer",background:isOpen&&!isPayoutSlot?"rgba(201,144,106,0.04)":"inherit"}}>
+                    <td key={di}
+                      onMouseDown={(e)=>{if(isPayoutSlot)return;e.preventDefault();const nv=!isPaid(m.id,di);setIsDragging(true);setDragValue(nv);togglePayment(m.id,di);}}
+                      onMouseEnter={()=>{if(!isDragging||isPayoutSlot)return;const cur=isPaid(m.id,di);if(cur!==dragValue)setPayment(m.id,di,dragValue);}}
+                      onMouseUp={()=>setIsDragging(false)}
+                      style={{textAlign:"center",verticalAlign:"middle",height:42,width:42,minWidth:42,borderBottom:"1px solid var(--border)",borderRight:"1px solid var(--border)",cursor:isPayoutSlot?"default":"pointer",background:isOpen&&!isPayoutSlot?"rgba(201,144,106,0.04)":"inherit",userSelect:"none"}}>
                       {isPayoutSlot
                         ? <div style={{width:24,height:24,borderRadius:6,background:"var(--shimmer)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11}}>{theme==="rosegold"?"🌸":"💰"}</div>
                         : paid
