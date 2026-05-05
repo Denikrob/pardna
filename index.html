@@ -744,7 +744,7 @@ function SettingsBtn({onClick}) {
 
 // ─── APP SHELL ───────────────────────────────────────────────────────────────
 function App() {
-  const [app,   setApp]   = useState("onboarding"); // organizer | onboarding | member
+  const [app,   setApp]   = useState("member"); // organizer | onboarding | member
   const [orgTaps, setOrgTaps] = useState(0);
   const [theme, setTheme] = useState("rosegold");
   const [alert, setAlert] = useState(null);
@@ -788,18 +788,7 @@ function App() {
           <span style={{fontSize:9,color:"rgba(255,255,255,0.6)",fontFamily:"'Jost',sans-serif",fontWeight:500}}>{dbStatus==="loaded"?"Live":"Offline"}</span>
         </div>
       )}
-      {/* App switcher bar — members see Onboard + My View only */}
-      {app !== "organizer" && (
-        <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:500,display:"flex",justifyContent:"center"}}>
-          <div style={{background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",display:"flex",gap:4,maxWidth:"var(--app-max-w)",width:"100%",padding:"7px 14px 10px"}}>
-            {[["onboarding","Onboard"],["member","My View"]].map(([id,label])=>(
-              <div key={id} onClick={()=>setApp(id)} style={{flex:1,padding:"5px 4px",borderRadius:8,textAlign:"center",cursor:"pointer",background:app===id?"rgba(255,255,255,0.16)":"transparent",transition:"all 0.15s"}}>
-                <div style={{fontSize:9,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",color:app===id?"white":"rgba(255,255,255,0.38)"}}>{label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* No bottom bar for members — onboarding is a link inside My View */}
       {/* Organizer mode — exit button in bottom bar */}
       {app === "organizer" && (
         <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:500,display:"flex",justifyContent:"center"}}>
@@ -814,7 +803,7 @@ function App() {
       <div style={{maxWidth:"var(--app-max-w)",margin:"0 auto",paddingBottom:120}}>
         {app==="organizer"  && <OrganizerApp  theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
         {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
-        {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
+        {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToOnboard={()=>setApp("onboarding")}/>}
       </div>
     </div>
   );
@@ -2232,7 +2221,7 @@ function OnboardingApp({theme, changeTheme, showAlert}) {
 }
 
 // ─── MEMBER VIEW ──────────────────────────────────────────────────────────────
-function MemberApp({theme, changeTheme, showAlert}) {
+function MemberApp({theme, changeTheme, showAlert, goToOnboard}) {
   const store = useStore();
   const { members } = store;
   const [showTheme, setShowTheme] = useState(false);
@@ -2370,8 +2359,18 @@ function MemberApp({theme, changeTheme, showAlert}) {
         </div>
       </div>
 
+      {/* Onboarding link */}
+      <div onClick={goToOnboard} style={{margin:"16px var(--pad) 0",background:"var(--surface)",borderRadius:18,padding:"16px 18px",border:"1px solid var(--border)",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
+        <div style={{width:38,height:38,borderRadius:11,background:"var(--accent-pale)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>✦</div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontWeight:600,color:"var(--primary)"}}>New to the circle?</div>
+          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Submit your preferences to join</div>
+        </div>
+        <div style={{fontSize:14,color:"var(--text-soft)"}}>→</div>
+      </div>
+
       {/* Footer */}
-      <div style={{margin:"28px var(--pad) 0",background:"var(--surface)",borderRadius:18,padding:"18px 20px",border:"1px solid var(--border)",display:"flex",alignItems:"center",gap:14}}>
+      <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",borderRadius:18,padding:"18px 20px",border:"1px solid var(--border)",display:"flex",alignItems:"center",gap:14}}>
         <div>
           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:600,color:"var(--primary)"}}>Pard<em style={{color:"var(--gold)"}}>na</em></div>
           <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Harvest Table · 2025–2026</div>
