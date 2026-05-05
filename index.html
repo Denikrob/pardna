@@ -1136,12 +1136,12 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
                   const isOpen = di===getGroup().openRound;
                   return (
                     <td key={di}
-                      onMouseDown={(e)=>{if(isPayoutSlot)return;e.preventDefault();const nv=!isPaid(m.id,di);setIsDragging(true);setDragValue(nv);togglePayment(m.id,di);}}
-                      onMouseEnter={()=>{if(!isDragging||isPayoutSlot)return;const cur=isPaid(m.id,di);if(cur!==dragValue)setPayment(m.id,di,dragValue);}}
+                      onMouseDown={(e)=>{e.preventDefault();const nv=!isPaid(m.id,di);setIsDragging(true);setDragValue(nv);togglePayment(m.id,di);}}
+                      onMouseEnter={()=>{if(!isDragging)return;const cur=isPaid(m.id,di);if(cur!==dragValue)setPayment(m.id,di,dragValue);}}
                       onMouseUp={()=>setIsDragging(false)}
-                      style={{textAlign:"center",verticalAlign:"middle",height:42,width:42,minWidth:42,borderBottom:"1px solid var(--border)",borderRight:"1px solid var(--border)",cursor:isPayoutSlot?"default":"pointer",background:isOpen&&!isPayoutSlot?"rgba(201,144,106,0.04)":"inherit",userSelect:"none"}}>
+                      style={{textAlign:"center",verticalAlign:"middle",height:42,width:42,minWidth:42,borderBottom:"1px solid var(--border)",borderRight:"1px solid var(--border)",cursor:"pointer",background:isOpen&&!isPayoutSlot?"rgba(201,144,106,0.04)":"inherit",userSelect:"none"}}>
                       {isPayoutSlot
-                        ? <div style={{width:24,height:24,borderRadius:6,background:"var(--shimmer)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11}}>{theme==="rosegold"?"🌸":"💰"}</div>
+                        ? <div style={{width:24,height:24,borderRadius:6,background:paid?"var(--green)":"var(--shimmer)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,transition:"background 0.2s"}}>{theme==="rosegold"?"🌸":"💰"}</div>
                         : paid
                           ? <div style={{width:20,height:20,borderRadius:"50%",background:"var(--green)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"white",fontWeight:700}}>✓</div>
                           : isOpen
