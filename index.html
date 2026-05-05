@@ -2282,8 +2282,9 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
     const handleIdentify = () => {
       const input = nameInput.trim().toLowerCase();
       if (!input) { setNameError("Please enter your name."); return; }
-      const match = members.find(m => m.name.replace(/\s*\(.*\)/,"").toLowerCase() === input || m.name.toLowerCase() === input);
-      if (match) { setMemberId(match.id); setNameError(""); }
+      const matches = members.filter(m => m.name.replace(/\s*\(.*\)/,"").toLowerCase() === input || m.name.toLowerCase() === input);
+      if (matches.length === 1) { setMemberId(matches[0].id); setNameError(""); }
+      else if (matches.length > 1) setNameError("Multiple members share this name. Please use your personal link sent by your organizer.");
       else setNameError("Name not found. Check spelling or contact your organizer.");
     };
     return (
