@@ -928,7 +928,9 @@ function OrganizerApp({theme, changeTheme, showAlert}) {
   const store = useStore();
   const { members, submissions, groups, activeGroupId } = store;
   const [screen, setScreen] = useState("home");
+  const [editInitialSection, setEditInitialSection] = useState("details");
   const [showTheme, setShowTheme] = useState(false);
+  const goToEditSection = (sec) => { setEditInitialSection(sec); setScreen("edit"); };
   const pending = submissions.filter(s=>s.status==="pending");
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
@@ -936,18 +938,18 @@ function OrganizerApp({theme, changeTheme, showAlert}) {
   return (
     <div>
       {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
-      {screen==="home"     && <OrgHome     members={members} pending={pending} submissions={submissions} groups={groups||[]} switchGroup={switchGroup} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert}/>}
+      {screen==="home"     && <OrgHome     members={members} pending={pending} submissions={submissions} groups={groups||[]} switchGroup={switchGroup} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} goToEditSection={goToEditSection}/>}
       {screen==="grid"     && <OrgGrid     key={activeGroupId} members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
       {screen==="schedule" && <OrgSchedule key={activeGroupId} members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
       {screen==="inbox"    && <OrgInbox    key={activeGroupId} pending={pending} submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert}/>}
       {screen==="setup"    && <OrgSetup    goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
-      {screen==="edit"     && <OrgEdit     goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
+      {screen==="edit"     && <OrgEdit     goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme} initialSection={editInitialSection}/>}
       {screen==="generate" && <OrgGenerate submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
     </div>
   );
 }
 
-function OrgHome({members, pending, submissions, groups, switchGroup, goTo, openTheme, showAlert}) {
+function OrgHome({members, pending, submissions, groups, switchGroup, goTo, openTheme, showAlert, goToEditSection}) {
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
   const pct = Math.round(((PAID_THROUGH+1)/getTotalHands())*100);
@@ -1024,7 +1026,10 @@ function OrgHome({members, pending, submissions, groups, switchGroup, goTo, open
                   <span style={{fontSize:10,fontWeight:600,padding:"4px 11px",borderRadius:20,background:isActive?"var(--accent-pale)":"var(--bg-mid)",color:isActive?"var(--primary)":"var(--text-soft)",border:"1px solid var(--border)"}}>
                     {isActive ? "Active" : "Tap to switch →"}
                   </span>
-                  {isActive && <div onClick={e=>{e.stopPropagation();goTo("edit");}} style={{fontSize:10,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"var(--surface)",color:"var(--primary)",border:"1px solid var(--border)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>✎ Edit</div>}
+                  {isActive && <div style={{display:"flex",gap:6}}>
+                    <div onClick={e=>{e.stopPropagation();goToEditSection("members");}} style={{fontSize:10,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"var(--accent-pale)",color:"var(--primary)",border:"1px solid var(--border)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>+ Member</div>
+                    <div onClick={e=>{e.stopPropagation();goTo("edit");}} style={{fontSize:10,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"var(--surface)",color:"var(--primary)",border:"1px solid var(--border)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>✎ Edit</div>
+                  </div>}
                 </div>
               </div>
               {isActive && <>
@@ -1598,12 +1603,12 @@ function OrgSetup({goTo, openTheme, showAlert, theme}) {
 }
 
 // ─── GROUP EDIT SCREEN ────────────────────────────────────────────────────────
-function OrgEdit({goTo, openTheme, showAlert, theme}) {
+function OrgEdit({goTo, openTheme, showAlert, theme, initialSection}) {
   const store = useStore();
   const { members, group } = store;
-  const [section, setSection] = useState("details"); // details | members | rounds
+  const [section, setSection] = useState(initialSection || "details"); // details | members | rounds
   const [editingMember, setEditingMember] = useState(null);
-  const [showAddMember, setShowAddMember] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(initialSection === "members");
   const [newName, setNewName] = useState("");
   const [newPay, setNewPay] = useState(null);
   const [newHands, setNewHands] = useState(1);
