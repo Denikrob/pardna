@@ -158,7 +158,11 @@ function getState() { return {..._state}; }
 function subscribe(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 
 // Derived values (computed from current state)
-function getGroup()      { return _state.group; }
+function getGroup() {
+  const g = _state.group;
+  const openRound = computeOpenRound(g.dates);
+  return { ...g, openRound, paidThrough: Math.max(0, openRound - 1) };
+}
 function getTotalHands() { return _state.members.length; }
 function getPotValue()   { return _state.members.length * _state.group.handAmount; }
 function getDateLabels() { return _state.group.dates.map(d => d.replace(/, 20\d{2}/g,"")); }
