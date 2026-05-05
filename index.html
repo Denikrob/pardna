@@ -1485,7 +1485,7 @@ function OrgSetup({goTo, openTheme, showAlert, theme}) {
   const [handAmount, setHandAmount] = useState("");
   const [frequency, setFrequency] = useState(null);
   const [startDate, setStartDate] = useState("");
-  const [numRounds, setNumRounds] = useState(19);
+  const [numRounds, setNumRounds] = useState(5);
   const [errors, setErrors]       = useState({});
   const [generatedDates, setGeneratedDates] = useState([]);
 
@@ -1701,22 +1701,26 @@ function OrgSetup({goTo, openTheme, showAlert, theme}) {
       )}
 
       {/* Number of rounds */}
-      {card("How many rounds?", "This determines how many payout slots your group will have. One slot per hand.",
+      {card("How many members have committed?", "Start with however many people have said yes. You can always add more slots later as more people join.",
         <>
-          {fieldLabel("Number of rounds")}
+          {fieldLabel("Members committed so far")}
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <div onClick={()=>numRounds>2&&setNumRounds(n=>n-1)} style={{width:44,height:44,borderRadius:12,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>−</div>
             <div style={{flex:1,textAlign:"center"}}>
               <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:42,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{numRounds}</div>
-              <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>rounds</div>
+              <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>starting slots</div>
             </div>
             <div onClick={()=>numRounds<52&&setNumRounds(n=>n+1)} style={{width:44,height:44,borderRadius:12,border:"1.5px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,cursor:"pointer",background:"var(--bg)",color:"var(--text)",fontWeight:600,userSelect:"none"}}>+</div>
           </div>
           {errorMsg(errors.numRounds)}
+          <div style={{marginTop:12,background:"var(--accent-pale)",borderRadius:12,padding:"10px 14px",border:"1px solid var(--border)",display:"flex",gap:8,alignItems:"flex-start"}}>
+            <span style={{fontSize:13,flexShrink:0}}>💡</span>
+            <div style={{fontSize:11,color:"var(--text-mid)",fontFamily:"'Jost',sans-serif",lineHeight:1.6}}>Not sure of the final count? That's fine — add more slots anytime in <strong>Edit → Rounds</strong> as more members join.</div>
+          </div>
           {frequency && startDate && (
-            <div style={{marginTop:14,background:"var(--bg)",borderRadius:12,padding:"12px 14px",border:"1px solid var(--border)"}}>
+            <div style={{marginTop:10,background:"var(--bg)",borderRadius:12,padding:"12px 14px",border:"1px solid var(--border)"}}>
               <div style={{fontSize:11,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",lineHeight:1.6}}>
-                With {numRounds} {frequency} rounds starting {fromInputDate(startDate)}, your cycle ends around <strong style={{color:"var(--primary)"}}>{generateCycleDates(startDate, frequency, numRounds).pop()}</strong>.
+                Starting {fromInputDate(startDate)}, your first {numRounds} rounds end around <strong style={{color:"var(--primary)"}}>{generateCycleDates(startDate, frequency, numRounds).pop()}</strong>.
               </div>
             </div>
           )}
