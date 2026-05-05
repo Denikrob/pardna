@@ -814,19 +814,51 @@ function generateSchedule(approvedSubs) {
 }
 
 // Apply a generated schedule: creates/updates members from assignments
-function applySchedule(result) {
+async function applySchedule(result) {
   const g = getGroup();
   const numRounds = g.dates.length;
-  const newMembers = result.assignments.map((a, i) => ({
+
+  // Optimistic local update first so UI responds immediately
+  const tempMembers = result.assignments.map((a, i) => ({
     id: `m${String(i+1).padStart(2,"0")}_${Date.now()}_${i}`,
-    name: a.name,
-    pay: a.pay,
-    pi: a.slotIndex,
-    hands: a.hands,
+    name: a.name, pay: a.pay, pi: a.slotIndex, hands: a.hands,
     paid: Array(numRounds).fill(0),
   }));
-  _state = {..._state, members: newMembers, paymentOverrides: {}};
+  _state = {..._state, members: tempMembers, paymentOverrides: {}};
   notify();
+
+  if (!SUPABASE_AVAILABLE || !_dbReady || !_dbGroupId) return;
+
+  // Delete all existing members for this group
+  await supabase.from("members").delete().eq("group_id", _dbGroupId);
+
+  // Insert the newly generated members
+  const dbRows = result.assignments.map(a => ({
+    group_id: _dbGroupId,
+    name: a.name,
+    payment_method: a.pay,
+    payout_slot: a.slotIndex,
+    hands: a.hands,
+  }));
+  const { data: inserted, error } = await supabase.from("members").insert(dbRows).select();
+
+  if (error) { console.error("Error saving schedule to Supabase:", error); return; }
+
+  if (inserted) {
+    // Swap temp local IDs → real DB IDs so future updates hit the right rows
+    _dbMemberIds = {};
+    const finalMembers = tempMembers.map(m => {
+      const dbRow = inserted.find(r => r.payout_slot === m.pi);
+      if (!dbRow) return m;
+      const localId = `db_${dbRow.id}`;
+      _dbMemberIds[localId] = dbRow.id;
+      return { ...m, id: localId };
+    });
+    _membersByGroupId[_dbGroupId] = finalMembers;
+    _state = { ..._state, members: finalMembers,
+      groups: _state.groups.map(gr => gr.id===_dbGroupId ? {...gr, memberCount:finalMembers.length} : gr) };
+    notify();
+  }
 }
 function useStore() {
   const [state, setState] = useState(getState());
@@ -2084,8 +2116,8 @@ function OrgGenerate({submissions, goTo, openTheme, showAlert, theme}) {
     return "var(--text-soft)";
   };
 
-  const handleApply = () => {
-    applySchedule(result);
+  const handleApply = async () => {
+    await applySchedule(result);
     setApplied(true);
     showAlert("Schedule applied ✦ Members are set!");
   };
