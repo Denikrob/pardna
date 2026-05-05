@@ -2138,6 +2138,7 @@ function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
     <div>
       {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
       {hdr(<>Join the <em style={{color:"var(--gold-light)"}}>Circle</em></>, <>You've been invited to {getGroup().name}.<br/>Fill this out so your organizer can build your schedule.</>)}
+      <div onClick={goToMyView} style={{display:"inline-flex",alignItems:"center",gap:6,margin:"16px var(--pad) 0",fontSize:12,fontWeight:500,color:"var(--text-soft)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>← Back to My View</div>
 
       {/* Group banner */}
       <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:18,border:"1px solid var(--border)",display:"flex",gap:14,alignItems:"center"}}>
