@@ -756,12 +756,26 @@ function SettingsBtn({onClick}) {
 
 // ─── APP SHELL ───────────────────────────────────────────────────────────────
 function App() {
-  const [app,   setApp]   = useState("member"); // organizer | onboarding | member
+  const [app,   setApp]   = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('member') ? "member" : "member";
+  });
   const [orgTaps, setOrgTaps] = useState(0);
   const [theme, setTheme] = useState("rosegold");
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [dbStatus, setDbStatus] = useState("connecting"); // connecting | loaded | fallback
+  const [dbStatus, setDbStatus] = useState("connecting");
+  const [memberId, setMemberIdState] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlId = params.get('member');
+    if (urlId) { localStorage.setItem('pardna_member_id', urlId); return urlId; }
+    return localStorage.getItem('pardna_member_id') || null;
+  });
+  const setMemberId = (id) => {
+    if (id) localStorage.setItem('pardna_member_id', id);
+    else localStorage.removeItem('pardna_member_id');
+    setMemberIdState(id);
+  };
 
   useEffect(() => { applyThemeVars(theme); }, [theme]);
 
@@ -815,7 +829,7 @@ function App() {
       <div style={{maxWidth:"var(--app-max-w)",margin:"0 auto",paddingBottom:120}}>
         {app==="organizer"  && <OrganizerApp  theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
         {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToMyView={()=>setApp("member")}/>}
-        {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToOnboard={()=>setApp("onboarding")}/>}
+        {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToOnboard={()=>setApp("onboarding")} memberId={memberId} setMemberId={setMemberId}/>}
       </div>
     </div>
   );
@@ -1194,16 +1208,28 @@ function OrgSchedule({members, goTo, openTheme}) {
         <div className="resp-grid">
         {members.map(m=>{
           const status = m.pi<=getGroup().paidThrough?"paid":m.pi===getGroup().openRound?"current":"upcoming";
+          const memberLink = `${window.location.origin}${window.location.pathname}?member=${m.id}`;
+          const copyLink = () => {
+            navigator.clipboard.writeText(memberLink).catch(()=>{
+              const ta=document.createElement("textarea");ta.value=memberLink;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
+            });
+          };
           return (
-            <div key={m.id} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)",marginBottom:9,display:"flex",alignItems:"center",gap:14}}>
-              <div style={{width:42,height:42,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:700,flexShrink:0,background:status==="paid"?"var(--green-bg)":status==="current"?"var(--header-grad)":"var(--bg-mid)",color:status==="paid"?"var(--green)":"white"}}>
-                {status==="paid"?"✓":m.pi+1}
+            <div key={m.id} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)",marginBottom:9}}>
+              <div style={{display:"flex",alignItems:"center",gap:14}}>
+                <div style={{width:42,height:42,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:700,flexShrink:0,background:status==="paid"?"var(--green-bg)":status==="current"?"var(--header-grad)":"var(--bg-mid)",color:status==="paid"?"var(--green)":"white"}}>
+                  {status==="paid"?"✓":m.pi+1}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>{m.name}</div>
+                  <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>{getDateLabels()[m.pi]} · {status==="paid"?"Disbursed":status==="current"?"This round — open now ✦":"Upcoming"}</div>
+                </div>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:19,fontWeight:700,color:status==="paid"?"var(--green)":status==="current"?"var(--accent)":"var(--text-soft)",flexShrink:0}}>${getPotValue().toLocaleString()}</div>
               </div>
-              <div style={{flex:1}}>
-                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>{m.name}</div>
-                <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2}}>{getDateLabels()[m.pi]} · {status==="paid"?"Disbursed":status==="current"?"This round — open now ✦":"Upcoming"}</div>
+              <div onClick={copyLink} style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                <div style={{fontSize:10,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"75%",opacity:0.7}}>?member={m.id}</div>
+                <div style={{fontSize:10,fontWeight:600,color:"var(--primary)",fontFamily:"'Jost',sans-serif",flexShrink:0,letterSpacing:"0.05em"}}>Copy Link ↗</div>
               </div>
-              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:19,fontWeight:700,color:status==="paid"?"var(--green)":status==="current"?"var(--accent)":"var(--text-soft)",flexShrink:0}}>${getPotValue().toLocaleString()}</div>
             </div>
           );
         })}
@@ -2238,17 +2264,42 @@ function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
 }
 
 // ─── MEMBER VIEW ──────────────────────────────────────────────────────────────
-function MemberApp({theme, changeTheme, showAlert, goToOnboard}) {
+function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMemberId}) {
   const store = useStore();
   const { members } = store;
   const [showTheme, setShowTheme] = useState(false);
   const [showMsg, setShowMsg] = useState(false);
   const [msgName, setMsgName] = useState("");
   const [msgText, setMsgText] = useState("");
-  const VIEWING_AS   = "Adenike";
+  const [nameInput, setNameInput] = useState("");
+  const [nameError, setNameError] = useState("");
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
-  const member       = members.find(m=>m.name===VIEWING_AS)||members[0];
+  const member       = members.find(m=>m.id===memberId) || null;
+
+  // Name-entry screen — shown when no member is identified yet
+  if (!member) {
+    const handleIdentify = () => {
+      const input = nameInput.trim().toLowerCase();
+      if (!input) { setNameError("Please enter your name."); return; }
+      const match = members.find(m => m.name.replace(/\s*\(.*\)/,"").toLowerCase() === input || m.name.toLowerCase() === input);
+      if (match) { setMemberId(match.id); setNameError(""); }
+      else setNameError("Name not found. Check spelling or contact your organizer.");
+    };
+    return (
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
+        <div style={{width:72,height:72,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,marginBottom:24,boxShadow:"0 8px 32px rgba(0,0,0,0.15)"}}>✦</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"var(--text)",marginBottom:8}}>Welcome to<br/><em style={{color:"var(--gold)"}}>Harvest Table</em></div>
+        <div style={{fontSize:13,color:"var(--text-soft)",lineHeight:1.7,marginBottom:32,fontFamily:"'Jost',sans-serif"}}>Enter your name to access your personal view.</div>
+        <div style={{width:"100%",maxWidth:320}}>
+          <input value={nameInput} onChange={e=>{setNameInput(e.target.value);setNameError("");}} onKeyDown={e=>e.key==="Enter"&&handleIdentify()} placeholder="Your name" style={{width:"100%",background:"var(--surface)",border:`1px solid ${nameError?"var(--accent)":"var(--border)"}`,borderRadius:12,padding:"13px 16px",fontSize:15,color:"var(--text)",fontFamily:"'Jost',sans-serif",outline:"none",marginBottom:10,textAlign:"center"}}/>
+          {nameError && <div style={{fontSize:11,color:"var(--accent)",marginBottom:10,fontFamily:"'Jost',sans-serif"}}>{nameError}</div>}
+          <button onClick={handleIdentify} style={{width:"100%",background:"var(--header-grad)",border:"none",borderRadius:12,padding:"13px",fontFamily:"'Jost',sans-serif",fontSize:13,fontWeight:600,color:"white",cursor:"pointer",letterSpacing:"0.04em"}}>Access My View →</button>
+          <div onClick={goToOnboard} style={{marginTop:20,fontSize:11,color:"var(--text-soft)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>New to the circle? <span style={{color:"var(--primary)",fontWeight:600}}>Submit your preferences</span></div>
+        </div>
+      </div>
+    );
+  }
   const firstName    = member.name.replace(/\s*\(.*\)/,"").split(" ")[0];
   const payoutDate   = getDateLabels()[member.pi];
   const payoutDone   = member.pi<=PAID_THROUGH;
