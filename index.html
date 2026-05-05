@@ -1167,6 +1167,14 @@ function OrgHome({members, pending, submissions, groups, switchGroup, goTo, open
                     </div>
                   ))}
                 </div>
+                <div onClick={e=>{
+                  e.stopPropagation();
+                  const link = `https://pardna-phi.vercel.app/?group=${g.id}`;
+                  navigator.clipboard.writeText(link).then(()=>showAlert("Invite link copied!")).catch(()=>showAlert("Link: "+link));
+                }} style={{marginTop:14,paddingTop:14,borderTop:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer"}}>
+                  <span style={{fontSize:13}}>🔗</span>
+                  <span style={{fontSize:11,fontWeight:600,color:"var(--primary)",fontFamily:"'Jost',sans-serif",letterSpacing:"0.04em"}}>Copy Invite Link</span>
+                </div>
               </>}
               {!isActive && <div style={{fontSize:11,color:"var(--text-soft)",marginTop:8}}>{g.memberCount||0} members · Round {gPaidThrough+1} of {gTotal}</div>}
             </div>
