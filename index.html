@@ -483,6 +483,18 @@ function isPaid(memberId, roundIndex) {
   return _state.paymentOverrides[key] !== undefined ? _state.paymentOverrides[key] : m?.paid[roundIndex]===1;
 }
 
+function submitMessage({name, message}) {
+  const sub = {id:`msg_${Date.now()}`, nickname:name, message, type:"message", hands:0, prefs:[], submittedAt:new Date().toISOString(), status:"pending"};
+  _state = {..._state, submissions:[..._state.submissions, sub]};
+  notify();
+  if (SUPABASE_AVAILABLE && _dbReady && _dbGroupId) {
+    supabase.from("submissions").insert({
+      group_id:_dbGroupId, nickname:name, payment_method:"—", hands:0,
+      preferences:[], status:"pending", message,
+    }).then(({error})=>{ if(error) console.error("Error saving message:",error); });
+  }
+  return sub;
+}
 function submitOnboarding(data) {
   const sub = {id:`sub_${Date.now()}`, ...data, submittedAt:new Date().toISOString(), status:"pending"};
   _state = {..._state, submissions:[..._state.submissions, sub]};
@@ -802,7 +814,7 @@ function App() {
 
       <div style={{maxWidth:"var(--app-max-w)",margin:"0 auto",paddingBottom:120}}>
         {app==="organizer"  && <OrganizerApp  theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
-        {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
+        {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToMyView={()=>setApp("member")}/>}
         {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToOnboard={()=>setApp("onboarding")}/>}
       </div>
     </div>
@@ -2042,7 +2054,7 @@ function OrgInbox({pending, submissions, goTo, openTheme, showAlert}) {
 }
 
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
-function OnboardingApp({theme, changeTheme, showAlert}) {
+function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
   const [showTheme, setShowTheme] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [sub, setSub]             = useState(null);
@@ -2113,7 +2125,11 @@ function OnboardingApp({theme, changeTheme, showAlert}) {
             </div>
           ))}
         </div>
-        <div style={{fontSize:11,color:"var(--text-soft)",lineHeight:1.5}}>Switch to the <strong style={{color:"var(--primary)"}}>Organizer</strong> view using the bar below to see your submission in the inbox.</div>
+        <div style={{fontSize:12,color:"var(--text-soft)",lineHeight:1.6,marginBottom:24}}>Your organizer will review your submission and reach out once the schedule is ready.</div>
+        <div onClick={goToMyView} style={{background:"var(--header-grad)",borderRadius:14,padding:"13px 28px",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:8,boxShadow:"0 4px 16px rgba(0,0,0,0.15)"}}>
+          <span style={{fontFamily:"'Jost',sans-serif",fontSize:13,fontWeight:600,color:"white",letterSpacing:"0.04em"}}>Back to My View</span>
+          <span style={{color:"var(--gold-light)"}}>→</span>
+        </div>
       </div>
     </div>
   );
@@ -2225,6 +2241,9 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard}) {
   const store = useStore();
   const { members } = store;
   const [showTheme, setShowTheme] = useState(false);
+  const [showMsg, setShowMsg] = useState(false);
+  const [msgName, setMsgName] = useState("");
+  const [msgText, setMsgText] = useState("");
   const VIEWING_AS   = "Adenike";
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
@@ -2375,8 +2394,22 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard}) {
           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:600,color:"var(--primary)"}}>Pard<em style={{color:"var(--gold)"}}>na</em></div>
           <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Harvest Table · 2025–2026</div>
         </div>
-        <div style={{marginLeft:"auto",fontSize:11,color:"var(--accent)",fontWeight:500,textAlign:"right",fontFamily:"'Jost',sans-serif"}}>Questions?<br/><span style={{color:"var(--primary)",fontWeight:600}}>Contact your organizer</span></div>
+        <div onClick={()=>setShowMsg(true)} style={{marginLeft:"auto",fontSize:11,color:"var(--accent)",fontWeight:500,textAlign:"right",fontFamily:"'Jost',sans-serif",cursor:"pointer"}}>Questions?<br/><span style={{color:"var(--primary)",fontWeight:600,textDecoration:"underline",textUnderlineOffset:2}}>Contact your organizer</span></div>
       </div>
+
+      {/* Message box */}
+      {showMsg && (
+        <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",borderRadius:18,padding:"18px 18px 14px",border:"1px solid var(--border)",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)",borderRadius:"18px 18px 0 0"}}/>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>Message your organizer</div>
+            <div onClick={()=>setShowMsg(false)} style={{fontSize:16,color:"var(--text-soft)",cursor:"pointer",padding:"2px 6px"}}>✕</div>
+          </div>
+          <input value={msgName} onChange={e=>setMsgName(e.target.value)} placeholder="Your name" style={{width:"100%",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:10,padding:"9px 12px",fontSize:13,color:"var(--text)",fontFamily:"'Jost',sans-serif",marginBottom:10,outline:"none"}}/>
+          <textarea value={msgText} onChange={e=>setMsgText(e.target.value)} placeholder="Type your question or message..." rows={3} style={{width:"100%",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:10,padding:"9px 12px",fontSize:13,color:"var(--text)",fontFamily:"'Jost',sans-serif",resize:"none",outline:"none",marginBottom:12}}/>
+          <button onClick={()=>{if(!msgName.trim()||!msgText.trim()){showAlert("Please fill in your name and message");return;}submitMessage({name:msgName,message:msgText});setShowMsg(false);setMsgName("");setMsgText("");showAlert("Message sent to your organizer ✦");}} style={{width:"100%",background:"var(--header-grad)",border:"none",borderRadius:10,padding:"11px",fontFamily:"'Jost',sans-serif",fontSize:12,fontWeight:600,color:"white",cursor:"pointer",letterSpacing:"0.05em"}}>Send Message</button>
+        </div>
+      )}
     </div>
   );
 }
