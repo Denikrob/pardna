@@ -51,11 +51,20 @@ const SUPABASE_AVAILABLE = supabase !== null;
 // This store works exactly like before (in-memory, reactive),
 // but now it loads from Supabase on startup and saves changes back.
 
+function computeOpenRound(dates) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  for (let i = 0; i < dates.length; i++) {
+    if (new Date(dates[i] + " 12:00:00") >= today) return i;
+  }
+  return dates.length - 1;
+}
+const _CYCLE_DATES = ["Oct 10, 2025","Oct 24, 2025","Nov 07, 2025","Nov 21, 2025","Dec 05, 2025","Dec 19, 2025","Jan 02, 2026","Jan 16, 2026","Jan 30, 2026","Feb 13, 2026","Feb 27, 2026","Mar 13, 2026","Mar 27, 2026","Apr 10, 2026","Apr 24, 2026","May 08, 2026","May 22, 2026","Jun 05, 2026","Jun 19, 2026"];
+const _OPEN_ROUND = computeOpenRound(_CYCLE_DATES);
 const INITIAL_GROUP = {
   name:"Harvest Table", organizer:"AR", handAmount:100,
   frequency:"Bi-weekly", startDate:"Oct 10, 2025", endDate:"Jun 19, 2026",
-  dates:["Oct 10, 2025","Oct 24, 2025","Nov 07, 2025","Nov 21, 2025","Dec 05, 2025","Dec 19, 2025","Jan 02, 2026","Jan 16, 2026","Jan 30, 2026","Feb 13, 2026","Feb 27, 2026","Mar 13, 2026","Mar 27, 2026","Apr 10, 2026","Apr 24, 2026","May 08, 2026","May 22, 2026","Jun 05, 2026","Jun 19, 2026"],
-  paidThrough:9, openRound:10,
+  dates:_CYCLE_DATES,
+  paidThrough:Math.max(0,_OPEN_ROUND-1), openRound:_OPEN_ROUND,
 };
 
 const SEED_MEMBERS = [
@@ -782,17 +791,16 @@ function App() {
       )}
       {/* App switcher bar */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:500,display:"flex",justifyContent:"center"}}>
-        <div style={{background:"rgba(0,0,0,0.85)",backdropFilter:"blur(12px)",borderRadius:"20px 20px 0 0",padding:"12px 20px 24px",display:"flex",gap:8,maxWidth:"var(--app-max-w)",width:"100%"}}>
-          {[["organizer","⌂","Organizer"],["onboarding","✦","Onboard"],["member","◎","My View"]].map(([id,icon,label])=>(
-            <div key={id} onClick={()=>setApp(id)} style={{flex:1,padding:"10px 6px",borderRadius:14,textAlign:"center",cursor:"pointer",background:app===id?"rgba(255,255,255,0.15)":"transparent",border:app===id?"1px solid rgba(255,255,255,0.2)":"1px solid transparent",transition:"all 0.15s"}}>
-              <div style={{fontSize:18,lineHeight:1}}>{icon}</div>
-              <div style={{fontSize:9,fontWeight:600,letterSpacing:1,textTransform:"uppercase",color:app===id?"white":"rgba(255,255,255,0.45)",marginTop:4}}>{label}</div>
+        <div style={{background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",display:"flex",gap:4,maxWidth:"var(--app-max-w)",width:"100%",padding:"7px 14px 10px"}}>
+          {[["organizer","Organizer"],["onboarding","Onboard"],["member","My View"]].map(([id,label])=>(
+            <div key={id} onClick={()=>setApp(id)} style={{flex:1,padding:"5px 4px",borderRadius:8,textAlign:"center",cursor:"pointer",background:app===id?"rgba(255,255,255,0.16)":"transparent",transition:"all 0.15s"}}>
+              <div style={{fontSize:9,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",color:app===id?"white":"rgba(255,255,255,0.38)"}}>{label}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{maxWidth:"var(--app-max-w)",margin:"0 auto",paddingBottom:180}}>
+      <div style={{maxWidth:"var(--app-max-w)",margin:"0 auto",paddingBottom:120}}>
         {app==="organizer"  && <OrganizerApp  theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
         {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
         {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
@@ -847,10 +855,10 @@ function OrgHome({members, pending, submissions, goTo, openTheme}) {
       </div>
 
       {/* Stats */}
-      <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
+      <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:16,padding:"12px 16px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
         {[["$"+getPotValue().toLocaleString(),"Total Pot"],[PAID_THROUGH+1,"Rounds done"],[getTotalHands()-PAID_THROUGH-1,"Remaining"]].map(([v,l],i)=>(
-          <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:16}:{}}>
-            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{v}</div>
+          <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:14}:{}}>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{v}</div>
             <div style={{fontSize:10,color:"var(--text-soft)",marginTop:3}}>{l}</div>
           </div>
         ))}
@@ -930,10 +938,10 @@ function OrgHome({members, pending, submissions, goTo, openTheme}) {
 
 function OrgNav({current, goTo, pendingCount}) {
   return (
-    <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"var(--app-max-w)",background:"var(--surface)",borderTop:"1px solid var(--border)",display:"flex",padding:"10px 8px 14px",zIndex:100}}>
+    <div style={{position:"fixed",bottom:38,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"var(--app-max-w)",background:"var(--surface)",borderTop:"1px solid var(--border)",display:"flex",padding:"6px 6px 8px",zIndex:100}}>
       {[["home","⌂","Dashboard"],["grid","▦","Tracker"],["schedule","◎","Schedule"],["inbox","📬","Inbox"]].map(([id,icon,label])=>(
-        <div key={id} onClick={()=>goTo(id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",padding:"6px 4px",borderRadius:12,background:current===id?"var(--bg-mid)":"transparent",position:"relative"}}>
-          <span style={{fontSize:19,lineHeight:1}}>{icon}</span>
+        <div key={id} onClick={()=>goTo(id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,cursor:"pointer",padding:"4px 4px",borderRadius:10,background:current===id?"var(--bg-mid)":"transparent",position:"relative"}}>
+          <span style={{fontSize:16,lineHeight:1}}>{icon}</span>
           <span style={{fontSize:9,fontWeight:600,letterSpacing:1,textTransform:"uppercase",color:current===id?"var(--primary)":"var(--text-soft)"}}>{label}</span>
           {id==="inbox"&&pendingCount>0&&<div style={{position:"absolute",top:4,right:16,width:7,height:7,borderRadius:"50%",background:"var(--gold)"}}/>}
         </div>
@@ -995,14 +1003,29 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
         <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
       </div>
 
-      <div style={{display:"flex",gap:10,padding:"var(--pad) var(--pad) 0"}}>
-        {[["$"+getPotValue().toLocaleString(),"Pot per round"],["$"+(getTotalHands()*getPotValue()).toLocaleString(),"Full cycle value"]].map(([v,l],i)=>(
-          <div key={i} style={{flex:1,background:"var(--surface)",borderRadius:16,padding:14,border:"1px solid var(--border)"}}>
-            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,fontWeight:700,color:i===1?"var(--gold)":"var(--primary)",lineHeight:1}}>{v}</div>
-            <div style={{fontSize:10,color:"var(--text-soft)",marginTop:4}}>{l}</div>
+      {(()=>{
+        const viewRound = activeRound!==null ? activeRound : OPEN_ROUND;
+        const paidCount = members.filter(m=>isPaid(m.id,viewRound)).length;
+        const collected = paidCount * getGroup().handAmount;
+        const total = getTotalHands() * getGroup().handAmount;
+        const pct = getTotalHands()>0 ? Math.round((paidCount/getTotalHands())*100) : 0;
+        return (
+          <div style={{padding:"var(--pad) var(--pad) 0"}}>
+            <div style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)"}}>
+              <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:8}}>
+                <div>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:700,color:"var(--primary)",lineHeight:1}}>${collected.toLocaleString()}</div>
+                  <div style={{fontSize:10,color:"var(--text-soft)",marginTop:4}}>Collected · Round {viewRound+1} · ${total.toLocaleString()} expected</div>
+                </div>
+                <div style={{fontSize:11,fontWeight:600,color:"var(--gold)"}}>{paidCount}/{getTotalHands()} hands</div>
+              </div>
+              <div style={{height:4,background:"var(--bg-mid)",borderRadius:4,overflow:"hidden"}}>
+                <div style={{height:"100%",borderRadius:4,background:"var(--shimmer)",width:`${pct}%`,transition:"width 0.3s"}}/>
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:40,height:40,borderRadius:12,background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{theme==="rosegold"?"🌹":"💰"}</div>
@@ -1147,7 +1170,7 @@ function OrgSchedule({members, goTo, openTheme}) {
         <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
       </div>
       <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
-        {[[paidCount,"Paid out"],[getTotalHands()-paidCount,"Remaining"],["$"+(getTotalHands()*getPotValue()).toLocaleString(),"Full cycle"]].map(([v,l],i)=>(
+        {[[paidCount,"Paid Out"],[getTotalHands()-paidCount,"Remaining"],[getGroup().endDate.replace(/, \d{4}/,""),"Last Day"]].map(([v,l],i)=>(
           <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:16}:{}}>
             <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:"var(--primary)",lineHeight:1}}>{v}</div>
             <div style={{fontSize:10,color:"var(--text-soft)",marginTop:3}}>{l}</div>
@@ -2202,7 +2225,7 @@ function MemberApp({theme, changeTheme, showAlert}) {
   const store = useStore();
   const { members } = store;
   const [showTheme, setShowTheme] = useState(false);
-  const VIEWING_AS   = "Aunya";
+  const VIEWING_AS   = "Adenike";
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
   const member       = members.find(m=>m.name===VIEWING_AS)||members[0];
