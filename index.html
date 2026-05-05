@@ -1191,7 +1191,7 @@ function OrgSchedule({members, goTo, openTheme}) {
         <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60}}/>
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:11,letterSpacing:4,textTransform:"uppercase",color:"var(--gold-light)",marginBottom:6,position:"relative"}}>Pardna</div>
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:34,fontWeight:600,color:"white",lineHeight:1.1,position:"relative"}}>Pot <em style={{color:"var(--gold-light)"}}>Schedule</em></div>
-        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>Harvest Table · Oct 2025 – Jun 2026</div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:5,fontWeight:300,position:"relative"}}>{getGroup().name} · {getGroup().startDate.replace(/, \d{4}/,"")} – {getGroup().endDate.replace(/, \d{4}/,"")}</div>
         <SettingsBtn onClick={openTheme}/>
         <div style={{position:"absolute",bottom:-1,left:0,right:0,height:24,background:"var(--bg)",borderRadius:"24px 24px 0 0"}}/>
       </div>
@@ -2290,7 +2290,7 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
     return (
       <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
         <div style={{width:72,height:72,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,marginBottom:24,boxShadow:"0 8px 32px rgba(0,0,0,0.15)"}}>✦</div>
-        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"var(--text)",marginBottom:8}}>Welcome to<br/><em style={{color:"var(--gold)"}}>Harvest Table</em></div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"var(--text)",marginBottom:8}}>Welcome to<br/><em style={{color:"var(--gold)"}}>{getGroup().name}</em></div>
         <div style={{fontSize:13,color:"var(--text-soft)",lineHeight:1.7,marginBottom:32,fontFamily:"'Jost',sans-serif"}}>Enter your name to access your personal view.</div>
         <div style={{width:"100%",maxWidth:320}}>
           <input value={nameInput} onChange={e=>{setNameInput(e.target.value);setNameError("");}} onKeyDown={e=>e.key==="Enter"&&handleIdentify()} placeholder="Your name" style={{width:"100%",background:"var(--surface)",border:`1px solid ${nameError?"var(--accent)":"var(--border)"}`,borderRadius:12,padding:"13px 16px",fontSize:15,color:"var(--text)",fontFamily:"'Jost',sans-serif",outline:"none",marginBottom:10,textAlign:"center"}}/>
@@ -2321,7 +2321,7 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:13,color:"rgba(255,255,255,0.5)",position:"relative",marginBottom:4}}>Welcome back,</div>
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:"white",lineHeight:1.05,position:"relative"}}>{firstName} <em style={{color:"var(--gold-light)"}}>✦</em></div>
         <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.18)",borderRadius:20,padding:"5px 13px",fontSize:11,color:"rgba(255,255,255,0.65)",marginTop:10,position:"relative",fontWeight:500,fontFamily:"'Jost',sans-serif"}}>
-          {theme==="rosegold"?"🌹":"✦"} Harvest Table · $100/hand · Slot {member.pi+1} of {getTotalHands()}
+          {theme==="rosegold"?"🌹":"✦"} {getGroup().name} · ${getGroup().handAmount}/hand · Slot {member.pi+1} of {getTotalHands()}
         </div>
         <SettingsBtn onClick={()=>setShowTheme(true)}/>
         <div style={{position:"absolute",bottom:-1,left:0,right:0,height:28,background:"var(--bg)",borderRadius:"28px 28px 0 0"}}/>
@@ -2445,7 +2445,7 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
       <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",borderRadius:18,padding:"18px 20px",border:"1px solid var(--border)",display:"flex",alignItems:"center",gap:14}}>
         <div>
           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:600,color:"var(--primary)"}}>Pard<em style={{color:"var(--gold)"}}>na</em></div>
-          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>Harvest Table · 2025–2026</div>
+          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{getGroup().name} · {new Date(getGroup().startDate).getFullYear()}–{new Date(getGroup().endDate).getFullYear()}</div>
         </div>
         <div onClick={()=>setShowMsg(true)} style={{marginLeft:"auto",fontSize:11,color:"var(--accent)",fontWeight:500,textAlign:"right",fontFamily:"'Jost',sans-serif",cursor:"pointer"}}>Questions?<br/><span style={{color:"var(--primary)",fontWeight:600,textDecoration:"underline",textUnderlineOffset:2}}>Contact your organizer</span></div>
       </div>
