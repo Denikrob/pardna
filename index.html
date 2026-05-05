@@ -154,6 +154,7 @@ function getCreatedGroups() { return [..._createdGroups]; }
 let _dbGroupId = null;       // UUID of the active group in the groups table
 let _dbMemberIds = {};       // map of local member id -> Supabase UUID
 let _dbReady = false;        // true once initial load is complete
+let _realtimeChannel = null; // active Supabase realtime channel
 
 let _state = { groups:[{...INITIAL_GROUP}], activeGroupId:"seed_local", group:{...INITIAL_GROUP}, members:SEED_MEMBERS, paymentOverrides:{}, submissions:[] };
 let _membersByGroupId = {};
@@ -205,6 +206,7 @@ async function switchGroup(groupId) {
   const { data: subs } = await supabase.from("submissions").select("*").eq("group_id", groupId).order("submitted_at");
   if (subs) _state = { ..._state, submissions: subs.map(s => ({ id:s.id, nickname:s.nickname, payMethod:s.payment_method, hands:s.hands, prefs:s.preferences, status:s.status, submittedAt:s.submitted_at })) };
   notify();
+  setupRealtimeSubscriptions();
 }
 function getPotValue()   { return _state.members.length * _state.group.handAmount; }
 function getDateLabels() { return _state.group.dates.map(d => d.replace(/, 20\d{2}/g,"")); }
@@ -286,6 +288,7 @@ async function loadFromSupabase() {
 
       _dbReady = true;
       notify();
+      setupRealtimeSubscriptions();
       console.log("Loaded from Supabase:", g.name, _state.members.length, "members");
       return true;
     }
@@ -297,6 +300,93 @@ async function loadFromSupabase() {
     console.error("Supabase load failed:", err);
     return false;
   }
+}
+
+// ─── SUPABASE: REALTIME SUBSCRIPTIONS ────────────────────────────────────────
+function setupRealtimeSubscriptions() {
+  if (!SUPABASE_AVAILABLE || !_dbReady || !_dbGroupId) return;
+
+  // Tear down any existing channel before creating a new one
+  if (_realtimeChannel) {
+    supabase.removeChannel(_realtimeChannel);
+    _realtimeChannel = null;
+  }
+
+  _realtimeChannel = supabase
+    .channel(`pardna-group-${_dbGroupId}`)
+
+    // ── Submissions: new onboarding form arrives → inbox updates live ──
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions',
+        filter: `group_id=eq.${_dbGroupId}` }, (payload) => {
+      const { eventType, new: row, old } = payload;
+      if (eventType === 'INSERT') {
+        const sub = { id: row.id, nickname: row.nickname, payMethod: row.payment_method,
+          hands: row.hands, prefs: row.preferences, status: row.status,
+          submittedAt: row.submitted_at, message: row.message };
+        if (!_state.submissions.find(s => s.id === row.id)) {
+          _state = { ..._state, submissions: [..._state.submissions, sub] };
+          notify();
+        }
+      } else if (eventType === 'UPDATE') {
+        _state = { ..._state, submissions: _state.submissions.map(s =>
+          s.id === row.id ? { ...s, status: row.status } : s) };
+        notify();
+      } else if (eventType === 'DELETE') {
+        _state = { ..._state, submissions: _state.submissions.filter(s => s.id !== old.id) };
+        notify();
+      }
+    })
+
+    // ── Payments: paid status toggled on another device → tracker updates ──
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, (payload) => {
+      const { new: row } = payload;
+      if (!row) return;
+      // Find which local member owns this payment row
+      const localId = Object.keys(_dbMemberIds).find(k => _dbMemberIds[k] === row.member_id);
+      if (!localId) return; // Belongs to a different group
+      _state = { ..._state, members: _state.members.map(m => {
+        if (m.id !== localId) return m;
+        const newPaid = [...m.paid];
+        newPaid[row.round_index] = row.paid ? 1 : 0;
+        return { ...m, paid: newPaid };
+      })};
+      // Also update the cache
+      if (_membersByGroupId[_dbGroupId]) {
+        _membersByGroupId[_dbGroupId] = _state.members;
+      }
+      notify();
+    })
+
+    // ── Members: someone added/removed from roster → rebuild member list ──
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'members',
+        filter: `group_id=eq.${_dbGroupId}` }, async () => {
+      // Full reload is safest for member changes (handles payout slot reindexing)
+      const { data: members } = await supabase
+        .from('members').select('*').eq('group_id', _dbGroupId).order('payout_slot');
+      if (!members) return;
+      const memberIds = members.map(m => m.id);
+      const { data: payments } = await supabase.from('payments').select('*').in('member_id', memberIds);
+      const payLookup = {};
+      if (payments) payments.forEach(p => {
+        if (!payLookup[p.member_id]) payLookup[p.member_id] = {};
+        payLookup[p.member_id][p.round_index] = p.paid ? 1 : 0;
+      });
+      const numRounds = (_state.group.dates || []).length;
+      const processed = members.map(m => {
+        const paidArr = Array(numRounds).fill(0);
+        Object.entries(payLookup[m.id] || {}).forEach(([ri, v]) => { paidArr[Number(ri)] = v; });
+        const localId = `db_${m.id}`; _dbMemberIds[localId] = m.id;
+        return { id: localId, name: m.name, pay: m.payment_method, pi: m.payout_slot, hands: m.hands, paid: paidArr };
+      });
+      _membersByGroupId[_dbGroupId] = processed;
+      _state = { ..._state, members: processed,
+        groups: _state.groups.map(g => g.id===_dbGroupId ? {...g, memberCount:processed.length} : g) };
+      notify();
+    })
+
+    .subscribe((status) => {
+      console.log('Pardna realtime:', status);
+    });
 }
 
 // ─── SUPABASE: SEED HARVEST TABLE ────────────────────────────────────────────
