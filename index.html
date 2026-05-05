@@ -61,10 +61,12 @@ function computeOpenRound(dates) {
 const _CYCLE_DATES = ["Oct 10, 2025","Oct 24, 2025","Nov 07, 2025","Nov 21, 2025","Dec 05, 2025","Dec 19, 2025","Jan 02, 2026","Jan 16, 2026","Jan 30, 2026","Feb 13, 2026","Feb 27, 2026","Mar 13, 2026","Mar 27, 2026","Apr 10, 2026","Apr 24, 2026","May 08, 2026","May 22, 2026","Jun 05, 2026","Jun 19, 2026"];
 const _OPEN_ROUND = computeOpenRound(_CYCLE_DATES);
 const INITIAL_GROUP = {
+  id:"seed_local",
   name:"Harvest Table", organizer:"AR", handAmount:100,
   frequency:"Bi-weekly", startDate:"Oct 10, 2025", endDate:"Jun 19, 2026",
   dates:_CYCLE_DATES,
   paidThrough:Math.max(0,_OPEN_ROUND-1), openRound:_OPEN_ROUND,
+  memberCount:19,
 };
 
 const SEED_MEMBERS = [
@@ -121,25 +123,27 @@ function fromInputDate(val) {
 let _createdGroups = [];
 function saveCreatedGroup(group) {
   _createdGroups.push(group);
-  // Also save to Supabase
+  const localId = `local_${Date.now()}`;
+  const newGroup = { ...group, id: localId, memberCount: 0 };
+  _state = { ..._state, groups: [newGroup, ..._state.groups], group: newGroup, activeGroupId: localId, members: [], paymentOverrides: {}, submissions: [] };
+  notify();
   if (SUPABASE_AVAILABLE) {
     const dbGroup = {
-    name: group.name,
-    organizer_name: "AR",
-    organizer_initials: "AR",
-    hand_amount: group.handAmount,
-    frequency: group.frequency.toLowerCase(),
-    start_date: group.startDate,
-    end_date: group.endDate,
-    dates: group.dates,
-    paid_through: -1,
-    open_round: 0,
-    status: "active",
-  };
-  supabase.from("groups").insert(dbGroup).then(({error}) => {
-    if (error) console.error("Error saving group:", error);
-    else console.log("Group saved to Supabase");
-  });
+      name: group.name, organizer_name: "AR", organizer_initials: "AR",
+      hand_amount: group.handAmount, frequency: group.frequency.toLowerCase(),
+      start_date: group.startDate, end_date: group.endDate,
+      dates: group.dates, paid_through: -1, open_round: 0, status: "active",
+    };
+    supabase.from("groups").insert(dbGroup).select().single().then(({data, error}) => {
+      if (error) { console.error("Error saving group:", error); return; }
+      if (data) {
+        _dbGroupId = data.id;
+        _state.groups = _state.groups.map(g => g.id===localId ? {...g, id: data.id} : g);
+        _state.activeGroupId = data.id;
+        _state.group = { ..._state.group, id: data.id };
+        notify();
+      }
+    });
   }
 }
 function getCreatedGroups() { return [..._createdGroups]; }
@@ -151,7 +155,8 @@ let _dbGroupId = null;       // UUID of the active group in the groups table
 let _dbMemberIds = {};       // map of local member id -> Supabase UUID
 let _dbReady = false;        // true once initial load is complete
 
-let _state = { group: {...INITIAL_GROUP}, members: SEED_MEMBERS, paymentOverrides: {}, submissions: [] };
+let _state = { groups:[{...INITIAL_GROUP}], activeGroupId:"seed_local", group:{...INITIAL_GROUP}, members:SEED_MEMBERS, paymentOverrides:{}, submissions:[] };
+let _membersByGroupId = {};
 const _listeners = new Set();
 function notify() { _listeners.forEach(fn => fn({..._state})); }
 function getState() { return {..._state}; }
@@ -163,7 +168,44 @@ function getGroup() {
   const openRound = computeOpenRound(g.dates);
   return { ...g, openRound, paidThrough: Math.max(0, openRound - 1) };
 }
+function getGroups() { return _state.groups; }
 function getTotalHands() { return _state.members.length; }
+
+async function switchGroup(groupId) {
+  if (groupId === _state.activeGroupId) return;
+  const group = _state.groups.find(g => g.id === groupId);
+  if (!group) return;
+  _dbGroupId = groupId;
+  _state = { ..._state, group, activeGroupId: groupId, paymentOverrides:{}, submissions:[] };
+  if (_membersByGroupId[groupId]) {
+    _state = { ..._state, members: _membersByGroupId[groupId] };
+    notify();
+  } else {
+    _state = { ..._state, members: [] };
+    notify();
+  }
+  if (!SUPABASE_AVAILABLE || !_dbReady) return;
+  const { data: members } = await supabase.from("members").select("*").eq("group_id", groupId).order("payout_slot");
+  if (members && members.length > 0) {
+    const memberIds = members.map(m => m.id);
+    const { data: payments } = await supabase.from("payments").select("*").in("member_id", memberIds);
+    const payLookup = {};
+    if (payments) payments.forEach(p => { if (!payLookup[p.member_id]) payLookup[p.member_id]={}; payLookup[p.member_id][p.round_index]=p.paid?1:0; });
+    const numRounds = group.dates.length;
+    const processed = members.map(m => {
+      const paidArr = Array(numRounds).fill(0);
+      Object.entries(payLookup[m.id]||{}).forEach(([ri,v])=>{ paidArr[Number(ri)]=v; });
+      const localId = `db_${m.id}`; _dbMemberIds[localId] = m.id;
+      return { id:localId, name:m.name, pay:m.payment_method, pi:m.payout_slot, hands:m.hands, paid:paidArr };
+    });
+    _membersByGroupId[groupId] = processed;
+    _state.groups = _state.groups.map(g => g.id===groupId ? {...g, memberCount:processed.length} : g);
+    _state = { ..._state, members: processed };
+  }
+  const { data: subs } = await supabase.from("submissions").select("*").eq("group_id", groupId).order("submitted_at");
+  if (subs) _state = { ..._state, submissions: subs.map(s => ({ id:s.id, nickname:s.nickname, payMethod:s.payment_method, hands:s.hands, prefs:s.preferences, status:s.status, submittedAt:s.submitted_at })) };
+  notify();
+}
 function getPotValue()   { return _state.members.length * _state.group.handAmount; }
 function getDateLabels() { return _state.group.dates.map(d => d.replace(/, 20\d{2}/g,"")); }
 
@@ -174,21 +216,25 @@ async function loadFromSupabase() {
     return false;
   }
   try {
-    // Try to load existing group
+    // Load all active groups
     const { data: groups, error: gErr } = await supabase
-      .from("groups").select("*").eq("status", "active").order("created_at", {ascending: false}).limit(1);
+      .from("groups").select("*").eq("status", "active").order("created_at", {ascending: false});
 
     if (gErr) { console.error("Error loading groups:", gErr); return false; }
 
     if (groups && groups.length > 0) {
-      const g = groups[0];
-      _dbGroupId = g.id;
-      _state.group = {
-        name: g.name, organizer: g.organizer_initials, handAmount: g.hand_amount,
+      const mapGroup = g => ({
+        id: g.id, name: g.name, organizer: g.organizer_initials, handAmount: g.hand_amount,
         frequency: g.frequency.charAt(0).toUpperCase() + g.frequency.slice(1),
         startDate: g.dates[0] || g.start_date, endDate: g.dates[g.dates.length-1] || g.end_date,
-        dates: g.dates, paidThrough: g.paid_through, openRound: g.open_round,
-      };
+        dates: g.dates, paidThrough: g.paid_through, openRound: g.open_round, memberCount: 0,
+      });
+      _state.groups = groups.map(mapGroup);
+
+      const g = groups[0];
+      _dbGroupId = g.id;
+      _state.activeGroupId = g.id;
+      _state.group = _state.groups[0];
 
       // Load members for this group
       const { data: members, error: mErr } = await supabase
@@ -222,6 +268,8 @@ async function loadFromSupabase() {
           };
         });
         _state.paymentOverrides = {};
+        _membersByGroupId[g.id] = _state.members;
+        _state.groups = _state.groups.map(gr => gr.id===g.id ? {...gr, memberCount:_state.members.length} : gr);
       }
 
       // Load submissions
@@ -495,15 +543,16 @@ function submitMessage({name, message}) {
   }
   return sub;
 }
-function submitOnboarding(data) {
+function submitOnboarding(data, groupId) {
   const sub = {id:`sub_${Date.now()}`, ...data, submittedAt:new Date().toISOString(), status:"pending"};
   _state = {..._state, submissions:[..._state.submissions, sub]};
   notify();
 
+  const targetGroupId = groupId || _dbGroupId;
   // Persist to Supabase
-  if (SUPABASE_AVAILABLE && _dbReady && _dbGroupId) {
+  if (SUPABASE_AVAILABLE && _dbReady && targetGroupId) {
     supabase.from("submissions").insert({
-      group_id: _dbGroupId, nickname: data.nickname,
+      group_id: targetGroupId, nickname: data.nickname,
       payment_method: data.payMethod, hands: data.hands,
       preferences: data.prefs, status: "pending",
     }).select().single().then(({data: dbSub, error}) => {
@@ -760,6 +809,10 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get('member') ? "member" : "member";
   });
+  const _urlGroupId = (() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('group') || null;
+  })();
   const [orgTaps, setOrgTaps] = useState(0);
   const [theme, setTheme] = useState("rosegold");
   const [alert, setAlert] = useState(null);
@@ -828,7 +881,7 @@ function App() {
 
       <div style={{maxWidth:"var(--app-max-w)",margin:"0 auto",paddingBottom:120}}>
         {app==="organizer"  && <OrganizerApp  theme={theme} changeTheme={changeTheme} showAlert={showAlert}/>}
-        {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToMyView={()=>setApp("member")}/>}
+        {app==="onboarding" && <OnboardingApp theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToMyView={()=>setApp("member")} groupId={_urlGroupId}/>}
         {app==="member"     && <MemberApp     theme={theme} changeTheme={changeTheme} showAlert={showAlert} goToOnboard={()=>setApp("onboarding")} memberId={memberId} setMemberId={setMemberId}/>}
       </div>
     </div>
@@ -838,7 +891,7 @@ function App() {
 // ─── ORGANIZER APP ────────────────────────────────────────────────────────────
 function OrganizerApp({theme, changeTheme, showAlert}) {
   const store = useStore();
-  const { members, submissions } = store;
+  const { members, submissions, groups } = store;
   const [screen, setScreen] = useState("home");
   const [showTheme, setShowTheme] = useState(false);
   const pending = submissions.filter(s=>s.status==="pending");
@@ -848,7 +901,7 @@ function OrganizerApp({theme, changeTheme, showAlert}) {
   return (
     <div>
       {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
-      {screen==="home"     && <OrgHome     members={members} pending={pending} submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
+      {screen==="home"     && <OrgHome     members={members} pending={pending} submissions={submissions} groups={groups||[]} switchGroup={switchGroup} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
       {screen==="grid"     && <OrgGrid     members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
       {screen==="schedule" && <OrgSchedule members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
       {screen==="inbox"    && <OrgInbox    pending={pending} submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert}/>}
@@ -859,7 +912,7 @@ function OrganizerApp({theme, changeTheme, showAlert}) {
   );
 }
 
-function OrgHome({members, pending, submissions, goTo, openTheme}) {
+function OrgHome({members, pending, submissions, groups, switchGroup, goTo, openTheme}) {
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
   const pct = Math.round(((PAID_THROUGH+1)/getTotalHands())*100);
@@ -914,34 +967,49 @@ function OrgHome({members, pending, submissions, goTo, openTheme}) {
         </div>
       </div>
 
-      {/* Group card */}
+      {/* Your Circles */}
       <div style={{padding:"var(--pad) var(--pad) 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:13}}>
-          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)"}}>Active Group</div>
-          <div onClick={e=>{e.stopPropagation();goTo("edit");}} style={{fontSize:10,fontWeight:600,padding:"4px 12px",borderRadius:20,background:"var(--surface)",color:"var(--primary)",border:"1px solid var(--border)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>✎ Edit</div>
-        </div>
-        <div onClick={()=>goTo("grid")} style={{background:"var(--card-bg)",borderRadius:20,padding:"18px 18px 16px",border:"1px solid var(--border)",cursor:"pointer",position:"relative",overflow:"hidden"}}>
-          <div style={{position:"absolute",top:0,left:0,right:0,height:3,borderRadius:"20px 20px 0 0",background:"var(--shimmer)"}}/>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginTop:6}}>
-            <div>
-              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)"}}>{getGroup().name}</div>
-              <div style={{fontSize:11,color:"var(--text-soft)",marginTop:3}}>{getGroup().frequency} · ${getGroup().handAmount}/hand · {getGroup().startDate} – {getGroup().endDate}</div>
-            </div>
-            <span style={{fontSize:10,fontWeight:600,padding:"4px 11px",borderRadius:20,background:"var(--accent-pale)",color:"var(--primary)",border:"1px solid var(--border)"}}>Active</span>
-          </div>
-          <div style={{marginTop:12,height:4,background:"var(--bg-mid)",borderRadius:4,overflow:"hidden"}}>
-            <div style={{height:"100%",borderRadius:4,background:"var(--shimmer)",width:`${pct}%`}}/>
-          </div>
-          <div style={{fontSize:10,color:"var(--text-soft)",marginTop:5,textAlign:"right"}}>Round {PAID_THROUGH+1} of {getTotalHands()} — {pct}%</div>
-          <div style={{display:"flex",marginTop:14,paddingTop:14,borderTop:"1px solid var(--border)"}}>
-            {[[getTotalHands(),"Total hands"],["$"+getPotValue().toLocaleString(),"Pot / round"],["$"+(getTotalHands()*getPotValue()).toLocaleString(),"Full cycle"]].map(([v,l],i)=>(
-              <div key={i} style={{flex:1}}>
-                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,color:"var(--primary)"}}>{v}</div>
-                <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2}}>{l}</div>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13}}>Your Circles</div>
+        {(groups||[]).map(g => {
+          const isActive = g.id === store.activeGroupId;
+          const gRound = computeOpenRound(g.dates||[]);
+          const gPaidThrough = Math.max(0, gRound - 1);
+          const gTotal = (g.dates||[]).length;
+          const gPct = gTotal ? Math.round((gPaidThrough / gTotal) * 100) : 0;
+          return (
+            <div key={g.id} onClick={()=>{ if(isActive){goTo("grid");}else{switchGroup(g.id);} }}
+              style={{background:isActive?"var(--card-bg)":"var(--surface)",borderRadius:20,padding:"16px 18px",border:isActive?"1px solid var(--border)":"1.5px dashed var(--border)",cursor:"pointer",position:"relative",overflow:"hidden",marginBottom:12,opacity:isActive?1:0.85}}>
+              {isActive && <div style={{position:"absolute",top:0,left:0,right:0,height:3,borderRadius:"20px 20px 0 0",background:"var(--shimmer)"}}/>}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginTop:isActive?6:0}}>
+                <div>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"var(--text)"}}>{g.name}</div>
+                  <div style={{fontSize:11,color:"var(--text-soft)",marginTop:3}}>{g.frequency} · ${g.handAmount}/hand · {g.startDate} – {g.endDate}</div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+                  <span style={{fontSize:10,fontWeight:600,padding:"4px 11px",borderRadius:20,background:isActive?"var(--accent-pale)":"var(--bg-mid)",color:isActive?"var(--primary)":"var(--text-soft)",border:"1px solid var(--border)"}}>
+                    {isActive ? "Active" : "Tap to switch →"}
+                  </span>
+                  {isActive && <div onClick={e=>{e.stopPropagation();goTo("edit");}} style={{fontSize:10,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"var(--surface)",color:"var(--primary)",border:"1px solid var(--border)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>✎ Edit</div>}
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
+              {isActive && <>
+                <div style={{marginTop:12,height:4,background:"var(--bg-mid)",borderRadius:4,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:4,background:"var(--shimmer)",width:`${gPct}%`}}/>
+                </div>
+                <div style={{fontSize:10,color:"var(--text-soft)",marginTop:5,textAlign:"right"}}>Round {gPaidThrough+1} of {gTotal} — {gPct}%</div>
+                <div style={{display:"flex",marginTop:14,paddingTop:14,borderTop:"1px solid var(--border)"}}>
+                  {[[gTotal,"Total hands"],["$"+(g.handAmount||0).toLocaleString(),"Pot / round"],["$"+((gTotal*(g.handAmount||0))).toLocaleString(),"Full cycle"]].map(([v,l],i)=>(
+                    <div key={i} style={{flex:1}}>
+                      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,color:"var(--primary)"}}>{v}</div>
+                      <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2}}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+              </>}
+              {!isActive && <div style={{fontSize:11,color:"var(--text-soft)",marginTop:8}}>{g.memberCount||0} members · Round {gPaidThrough+1} of {gTotal}</div>}
+            </div>
+          );
+        })}
       </div>
 
       {/* Create new group */}
@@ -2080,7 +2148,7 @@ function OrgInbox({pending, submissions, goTo, openTheme, showAlert}) {
 }
 
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
-function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
+function OnboardingApp({theme, changeTheme, showAlert, goToMyView, groupId}) {
   const [showTheme, setShowTheme] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [sub, setSub]             = useState(null);
@@ -2089,6 +2157,9 @@ function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
   const [hands, setHands]         = useState(1);
   const [prefs, setPrefs]         = useState([{first:null,second:null}]);
   const [errors, setErrors]       = useState({});
+
+  // Resolve the group this onboarding form is for
+  const tg = (groupId && getGroups().find(g => g.id === groupId)) || getGroup();
 
   const changeHands = n => {
     setHands(n);
@@ -2111,7 +2182,7 @@ function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
   };
   const handleSubmit = () => {
     if(!validate()){showAlert("Please complete all fields");return;}
-    const result = submitOnboarding({nickname,payMethod,hands,prefs});
+    const result = submitOnboarding({nickname,payMethod,hands,prefs}, groupId);
     setSub(result); setSubmitted(true);
   };
   const pm = {zelle:"💙 Zelle",venmo:"💜 Venmo",cashapp:"💚 Cash App"}[payMethod];
@@ -2144,7 +2215,7 @@ function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:"var(--text)",lineHeight:1.1,marginBottom:10}}>You're <em style={{color:"var(--gold)"}}>in</em>,<br/>{nickname}!</div>
         <div style={{fontSize:13,color:"var(--text-soft)",lineHeight:1.7,marginBottom:32}}>Your preferences have been sent to your organizer. Once everyone submits, you'll receive your personal Pardna link.</div>
         <div style={{background:"var(--surface)",borderRadius:20,padding:20,border:"1px solid var(--border)",width:"100%",marginBottom:24,textAlign:"left"}}>
-          {[["Group",getGroup().name],["Hands",`${hands} hand${hands>1?"s":""}`],["Per round","$"+hands*getGroup().handAmount],["Pay via",pm||"—"],["Payout","$"+hands*getPotValue()],...prefs.flatMap((p,hi)=>[[hands>1?`H${hi+1} 1st`:"1st pick",p.first?.replace(", 2025","").replace(", 2026","")],[hands>1?`H${hi+1} 2nd`:"2nd pick",p.second?.replace(", 2025","").replace(", 2026","")]])].map(([k,v])=>(
+          {[["Group",tg.name],["Hands",`${hands} hand${hands>1?"s":""}`],["Per round","$"+hands*tg.handAmount],["Pay via",pm||"—"],["Payout","$"+hands*getPotValue()],...prefs.flatMap((p,hi)=>[[hands>1?`H${hi+1} 1st`:"1st pick",p.first?.replace(", 2025","").replace(", 2026","")],[hands>1?`H${hi+1} 2nd`:"2nd pick",p.second?.replace(", 2025","").replace(", 2026","")]])].map(([k,v])=>(
             <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid var(--border)"}}>
               <span style={{fontSize:11,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>{k}</span>
               <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{v}</span>
@@ -2163,15 +2234,15 @@ function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
   return (
     <div>
       {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
-      {hdr(<>Join the <em style={{color:"var(--gold-light)"}}>Circle</em></>, <>You've been invited to {getGroup().name}.<br/>Fill this out so your organizer can build your schedule.</>)}
+      {hdr(<>Join the <em style={{color:"var(--gold-light)"}}>Circle</em></>, <>You've been invited to {tg.name}.<br/>Fill this out so your organizer can build your schedule.</>)}
       <div onClick={goToMyView} style={{display:"inline-flex",alignItems:"center",gap:6,margin:"16px var(--pad) 0",fontSize:12,fontWeight:500,color:"var(--text-soft)",cursor:"pointer",fontFamily:"'Jost',sans-serif"}}>← Back to My View</div>
 
       {/* Group banner */}
       <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:18,border:"1px solid var(--border)",display:"flex",gap:14,alignItems:"center"}}>
-        <div style={{width:46,height:46,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:700,color:"white",flexShrink:0}}>{getGroup().organizer}</div>
+        <div style={{width:46,height:46,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:700,color:"white",flexShrink:0}}>{tg.organizer}</div>
         <div>
-          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,color:"var(--text)"}}>{getGroup().name}</div>
-          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:3,lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>${getGroup().handAmount}/hand · {getGroup().frequency}<br/>{getGroup().startDate} – {getGroup().endDate}</div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:600,color:"var(--text)"}}>{tg.name}</div>
+          <div style={{fontSize:11,color:"var(--text-soft)",marginTop:3,lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>${tg.handAmount}/hand · {tg.frequency}<br/>{tg.startDate} – {tg.endDate}</div>
           <div style={{display:"inline-flex",alignItems:"center",gap:5,background:"var(--accent-pale)",border:"1px solid var(--border)",borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:600,color:"var(--primary)",marginTop:6}}>🌹 {getTotalHands()} hands total</div>
         </div>
       </div>
@@ -2246,7 +2317,7 @@ function OnboardingApp({theme, changeTheme, showAlert, goToMyView}) {
           <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"var(--shimmer)"}}/>
           <div style={{position:"absolute",width:150,height:150,borderRadius:"50%",background:"radial-gradient(circle,rgba(255,255,255,0.07) 0%,transparent 70%)",top:-40,right:-40,pointerEvents:"none"}}/>
           <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>Your summary</div>
-          {[["Name",nickname],["Group",getGroup().name],["Hands",`${hands} hand${hands>1?"s":""}`],["Per round","$"+hands*getGroup().handAmount],["Pay via",pm||"—"],["Payout","$"+hands*getPotValue()]].map(([k,v])=>(
+          {[["Name",nickname],["Group",tg.name],["Hands",`${hands} hand${hands>1?"s":""}`],["Per round","$"+hands*tg.handAmount],["Pay via",pm||"—"],["Payout","$"+hands*getPotValue()]].map(([k,v])=>(
             <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
               <span style={{fontSize:12,color:"rgba(255,255,255,0.55)",fontFamily:"'Jost',sans-serif"}}>{k}</span>
               <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:k==="Payout"?"var(--gold-light)":"white"}}>{v}</span>
