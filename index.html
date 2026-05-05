@@ -2128,6 +2128,29 @@ function OrgGenerate({submissions, goTo, openTheme, showAlert, theme}) {
     return "var(--text-soft)";
   };
 
+  const [selectedIdx, setSelectedIdx] = useState(null);
+
+  const handleSlotTap = (i) => {
+    const a = result.assignments[i];
+    if (a.method === "organizer") return; // Slot 1 is locked
+    if (selectedIdx === null) {
+      setSelectedIdx(i);
+    } else if (selectedIdx === i) {
+      setSelectedIdx(null); // deselect
+    } else {
+      // Swap the slotIndex between the two assignments
+      const newAssignments = result.assignments.map((x, idx) => {
+        if (idx === selectedIdx) return { ...x, slotIndex: result.assignments[i].slotIndex };
+        if (idx === i) return { ...x, slotIndex: result.assignments[selectedIdx].slotIndex };
+        return x;
+      });
+      newAssignments.sort((a, b) => a.slotIndex - b.slotIndex);
+      setResult({ ...result, assignments: newAssignments });
+      setSelectedIdx(null);
+      showAlert("Slots swapped ✦");
+    }
+  };
+
   const handleApply = async () => {
     await applySchedule(result);
     setApplied(true);
@@ -2190,30 +2213,52 @@ function OrgGenerate({submissions, goTo, openTheme, showAlert, theme}) {
 
           {/* Assignment list */}
           <div style={{padding:"var(--pad) var(--pad) 0"}}>
-            <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13,fontFamily:"'Jost',sans-serif"}}>Slot Assignments</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:13}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>Slot Assignments</div>
+              {selectedIdx !== null
+                ? <div style={{fontSize:10,fontWeight:600,color:"var(--primary)",fontFamily:"'Jost',sans-serif",background:"var(--accent-pale)",padding:"3px 10px",borderRadius:20,border:"1px solid var(--border)"}}>Now tap a slot to swap ↕</div>
+                : <div style={{fontSize:10,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif"}}>Tap any slot to reorder</div>
+              }
+            </div>
             <div className="resp-grid">
-            {result.assignments.map((a, i) => (
-              <div key={i} style={{background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)",marginBottom:9,position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:a.method==="organizer"?"var(--shimmer)":"transparent"}}/>
+            {result.assignments.map((a, i) => {
+              const isSelected = selectedIdx === i;
+              const isLocked = a.method === "organizer";
+              const isSwapTarget = selectedIdx !== null && !isSelected && !isLocked;
+              return (
+              <div key={i} onClick={()=>handleSlotTap(i)}
+                style={{background:isSelected?"var(--accent-pale)":isSwapTarget?"var(--bg-mid)":"var(--surface)",borderRadius:16,padding:"14px 16px",
+                  border:isSelected?"2px solid var(--primary)":isSwapTarget?"1.5px dashed var(--accent)":"1px solid var(--border)",
+                  marginBottom:9,position:"relative",overflow:"hidden",cursor:isLocked?"default":"pointer",
+                  transition:"border 0.15s,background 0.15s"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:isLocked?"var(--shimmer)":isSelected?"var(--primary)":"transparent",borderRadius:"16px 16px 0 0"}}/>
                 <div style={{display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:40,height:40,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0,background:a.method==="organizer"?"var(--header-grad)":"var(--bg-mid)",color:a.method==="organizer"?"white":"var(--text-soft)",fontFamily:"'Cormorant Garamond',serif"}}>{a.slotIndex+1}</div>
+                  <div style={{width:40,height:40,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0,
+                    background:isLocked?"var(--header-grad)":isSelected?"var(--primary)":"var(--bg-mid)",
+                    color:isLocked||isSelected?"white":"var(--text-soft)",fontFamily:"'Cormorant Garamond',serif"}}>{a.slotIndex+1}</div>
                   <div style={{flex:1}}>
                     <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"var(--text)"}}>{a.name}</div>
                     <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{DL[a.slotIndex]} · {a.pay}</div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:10,fontWeight:600,color:methodColor(a.method),fontFamily:"'Jost',sans-serif"}}>{a.method === "organizer" ? "Organizer" : a.method}</div>
+                    {isLocked
+                      ? <div style={{fontSize:10,fontWeight:600,color:"var(--gold)",fontFamily:"'Jost',sans-serif"}}>🔒 Organizer</div>
+                      : isSelected
+                        ? <div style={{fontSize:11,fontWeight:700,color:"var(--primary)",fontFamily:"'Jost',sans-serif"}}>Selected ✦</div>
+                        : <div style={{fontSize:10,fontWeight:600,color:methodColor(a.method),fontFamily:"'Jost',sans-serif"}}>{a.method}</div>
+                    }
                   </div>
                 </div>
                 {a.method !== "organizer" && (
-                  <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid var(--border)",fontSize:10,color:"var(--text-soft)",lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>
+                  <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${isSelected?"var(--border)":"var(--border)"}`,fontSize:10,color:"var(--text-soft)",lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>
                     Wanted: <strong style={{color:"var(--text-mid)"}}>{a.prefFirst ? a.prefFirst.replace(/, 20\d{2}/,"") : "—"}</strong> (1st)
                     {a.prefSecond && <> · <strong style={{color:"var(--text-mid)"}}>{a.prefSecond.replace(/, 20\d{2}/,"")}</strong> (2nd)</>}
                     {a.method !== "1st choice" && <> → <span style={{color:methodColor(a.method)}}>{a.method === "2nd choice" ? "got 2nd" : "nearest open"}</span></>}
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
             </div>
           </div>
 
