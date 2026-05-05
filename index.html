@@ -926,7 +926,7 @@ function App() {
 // ─── ORGANIZER APP ────────────────────────────────────────────────────────────
 function OrganizerApp({theme, changeTheme, showAlert}) {
   const store = useStore();
-  const { members, submissions, groups } = store;
+  const { members, submissions, groups, activeGroupId } = store;
   const [screen, setScreen] = useState("home");
   const [showTheme, setShowTheme] = useState(false);
   const pending = submissions.filter(s=>s.status==="pending");
@@ -936,10 +936,10 @@ function OrganizerApp({theme, changeTheme, showAlert}) {
   return (
     <div>
       {showTheme && <ThemeModal current={theme} onSelect={k=>{changeTheme(k);setShowTheme(false);}} onClose={()=>setShowTheme(false)}/>}
-      {screen==="home"     && <OrgHome     members={members} pending={pending} submissions={submissions} groups={groups||[]} switchGroup={switchGroup} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
-      {screen==="grid"     && <OrgGrid     members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
-      {screen==="schedule" && <OrgSchedule members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
-      {screen==="inbox"    && <OrgInbox    pending={pending} submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert}/>}
+      {screen==="home"     && <OrgHome     members={members} pending={pending} submissions={submissions} groups={groups||[]} switchGroup={switchGroup} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert}/>}
+      {screen==="grid"     && <OrgGrid     key={activeGroupId} members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
+      {screen==="schedule" && <OrgSchedule key={activeGroupId} members={members} goTo={setScreen} openTheme={()=>setShowTheme(true)}/>}
+      {screen==="inbox"    && <OrgInbox    key={activeGroupId} pending={pending} submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert}/>}
       {screen==="setup"    && <OrgSetup    goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
       {screen==="edit"     && <OrgEdit     goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
       {screen==="generate" && <OrgGenerate submissions={submissions} goTo={setScreen} openTheme={()=>setShowTheme(true)} showAlert={showAlert} theme={theme}/>}
@@ -947,7 +947,7 @@ function OrganizerApp({theme, changeTheme, showAlert}) {
   );
 }
 
-function OrgHome({members, pending, submissions, groups, switchGroup, goTo, openTheme}) {
+function OrgHome({members, pending, submissions, groups, switchGroup, goTo, openTheme, showAlert}) {
   const PAID_THROUGH = getGroup().paidThrough;
   const OPEN_ROUND   = getGroup().openRound;
   const pct = Math.round(((PAID_THROUGH+1)/getTotalHands())*100);
@@ -1012,7 +1012,7 @@ function OrgHome({members, pending, submissions, groups, switchGroup, goTo, open
           const gTotal = (g.dates||[]).length;
           const gPct = gTotal ? Math.round((gPaidThrough / gTotal) * 100) : 0;
           return (
-            <div key={g.id} onClick={()=>{ if(isActive){goTo("grid");}else{switchGroup(g.id);} }}
+            <div key={g.id} onClick={()=>{ if(isActive){goTo("grid");}else{switchGroup(g.id);showAlert("Switched to "+g.name);} }}
               style={{background:isActive?"var(--card-bg)":"var(--surface)",borderRadius:20,padding:"16px 18px",border:isActive?"1px solid var(--border)":"1.5px dashed var(--border)",cursor:"pointer",position:"relative",overflow:"hidden",marginBottom:12,opacity:isActive?1:0.85}}>
               {isActive && <div style={{position:"absolute",top:0,left:0,right:0,height:3,borderRadius:"20px 20px 0 0",background:"var(--shimmer)"}}/>}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginTop:isActive?6:0}}>
