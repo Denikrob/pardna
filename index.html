@@ -927,16 +927,21 @@ function SettingsBtn({onClick}) {
 
 // ─── APP SHELL ───────────────────────────────────────────────────────────────
 function App() {
-  const [app,   setApp]   = useState(() => {
+  // A link with ?member=<id> always opens that member's view (for anyone).
+  // A bare visit on a device marked as the organizer's asks for the password
+  // and opens the dashboard instead of the last-viewed member.
+  const _hasMemberLink = (() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('member') ? "member" : "member";
-  });
+    return !!params.get('member');
+  })();
+  const _isOrganizerDevice = localStorage.getItem('pardna_role') === 'organizer';
+  const [app,   setApp]   = useState("member");
   const _urlGroupId = (() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('group') || null;
   })();
   const [orgTaps, setOrgTaps] = useState(0);
-  const [showOrgPw, setShowOrgPw] = useState(false);
+  const [showOrgPw, setShowOrgPw] = useState(_isOrganizerDevice && !_hasMemberLink);
   const [orgPwInput, setOrgPwInput] = useState("");
   const [orgPwError, setOrgPwError] = useState(false);
   const [theme, setTheme] = useState("rosegold");
@@ -946,7 +951,12 @@ function App() {
   const [memberId, setMemberIdState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const urlId = params.get('member');
-    if (urlId) { localStorage.setItem('pardna_member_id', urlId); return urlId; }
+    if (urlId) {
+      // Remember this member on their own device — but never overwrite the
+      // organizer's device default just because they peeked at someone's link.
+      if (localStorage.getItem('pardna_role') !== 'organizer') localStorage.setItem('pardna_member_id', urlId);
+      return urlId;
+    }
     return localStorage.getItem('pardna_member_id') || null;
   });
   const setMemberId = (id) => {
@@ -1016,7 +1026,7 @@ function App() {
               onChange={e=>{setOrgPwInput(e.target.value);setOrgPwError(false);}}
               onKeyDown={e=>{
                 if(e.key==="Enter"){
-                  if(orgPwInput==="Ujam44"){setShowOrgPw(false);setApp("organizer");showAlert("Organizer mode unlocked");}
+                  if(orgPwInput==="Ujam44"){localStorage.setItem('pardna_role','organizer');setShowOrgPw(false);setApp("organizer");showAlert("Organizer mode unlocked");}
                   else{setOrgPwError(true);setOrgPwInput("");}
                 }
               }}
@@ -1028,7 +1038,7 @@ function App() {
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setShowOrgPw(false)} style={{flex:1,padding:"12px",borderRadius:12,border:"1.5px solid var(--border)",background:"transparent",color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",fontSize:13,fontWeight:500,cursor:"pointer"}}>Cancel</button>
               <button onClick={()=>{
-                if(orgPwInput==="Ujam44"){setShowOrgPw(false);setApp("organizer");showAlert("Organizer mode unlocked");}
+                if(orgPwInput==="Ujam44"){localStorage.setItem('pardna_role','organizer');setShowOrgPw(false);setApp("organizer");showAlert("Organizer mode unlocked");}
                 else{setOrgPwError(true);setOrgPwInput("");}
               }} style={{flex:2,padding:"12px",borderRadius:12,border:"none",background:"var(--header-grad)",color:"white",fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,cursor:"pointer"}}>Unlock</button>
             </div>
