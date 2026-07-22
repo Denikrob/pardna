@@ -1013,9 +1013,11 @@ function App() {
     return params.get('group') || null;
   })();
   const [orgTaps, setOrgTaps] = useState(0);
-  const [showOrgPw, setShowOrgPw] = useState(_isOrganizerDevice && !_hasMemberLink);
+  const [showOrgPw, setShowOrgPw] = useState(false);
+  const [orgEmail, setOrgEmail] = useState("");
   const [orgPwInput, setOrgPwInput] = useState("");
-  const [orgPwError, setOrgPwError] = useState(false);
+  const [orgPwError, setOrgPwError] = useState("");
+  const [orgAuthBusy, setOrgAuthBusy] = useState(false);
   const [theme, setTheme] = useState("rosegold");
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1039,16 +1041,49 @@ function App() {
 
   useEffect(() => { applyThemeVars(theme); }, [theme]);
 
-  // Load data from Supabase on startup
+  // Load data from Supabase on startup. On the organizer's device, a saved
+  // login session goes straight to the dashboard — no prompt on refresh.
   useEffect(() => {
-    loadFromSupabase().then(success => {
+    loadFromSupabase().then(async success => {
       setDbStatus(success ? "loaded" : "fallback");
+      if (_isOrganizerDevice && !_hasMemberLink) {
+        if (SUPABASE_AVAILABLE) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) setApp("organizer");
+          else setShowOrgPw(true);
+        } else {
+          setShowOrgPw(true);
+        }
+      }
       setLoading(false);
     }).catch(() => {
       setDbStatus("fallback");
       setLoading(false);
     });
   }, []);
+
+  const handleOrgLogin = async () => {
+    if (!SUPABASE_AVAILABLE) {
+      // Offline/dev fallback — no database means nothing to protect
+      localStorage.setItem('pardna_role','organizer'); setShowOrgPw(false); setApp("organizer"); return;
+    }
+    if (!orgEmail.trim() || !orgPwInput) { setOrgPwError("Enter your email and password."); return; }
+    setOrgAuthBusy(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: orgEmail.trim(), password: orgPwInput });
+    setOrgAuthBusy(false);
+    if (error) { setOrgPwError("That didn't match. Check your email and password."); setOrgPwInput(""); return; }
+    localStorage.setItem('pardna_role','organizer');
+    setShowOrgPw(false); setOrgPwInput("");
+    setApp("organizer");
+    showAlert("Welcome back ✦");
+  };
+
+  const handleSignOut = async () => {
+    if (SUPABASE_AVAILABLE) await supabase.auth.signOut();
+    localStorage.removeItem('pardna_role');
+    setApp("member");
+    showAlert("Signed out");
+  };
 
   const showAlert = msg => { setAlert(msg); setTimeout(()=>setAlert(null),2400); };
   const changeTheme = key => { setTheme(key); applyThemeVars(key); showAlert(`${THEMES[key].name} theme applied`); };
@@ -1069,7 +1104,13 @@ function App() {
     <div style={s}>
       <Alert msg={alert}/>
       {!alert && (
-        <div onClick={()=>{const n=orgTaps+1;setOrgTaps(n);if(n>=3){setOrgTaps(0);setOrgPwInput("");setOrgPwError(false);setShowOrgPw(true);}}} style={{position:"fixed",top:8,right:12,display:"flex",alignItems:"center",gap:5,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(8px)",borderRadius:20,padding:"4px 10px",zIndex:300,cursor:"pointer",userSelect:"none"}}>
+        <div onClick={async ()=>{const n=orgTaps+1;setOrgTaps(n);if(n>=3){setOrgTaps(0);
+          if (SUPABASE_AVAILABLE) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) { localStorage.setItem('pardna_role','organizer'); setApp("organizer"); return; }
+          }
+          setOrgPwInput("");setOrgPwError("");setShowOrgPw(true);
+        }}} style={{position:"fixed",top:8,right:12,display:"flex",alignItems:"center",gap:5,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(8px)",borderRadius:20,padding:"4px 10px",zIndex:300,cursor:"pointer",userSelect:"none"}}>
           <div style={{width:6,height:6,borderRadius:"50%",background:dbStatus==="loaded"?"#4A9C7A":"#D4882A"}}/>
           <span style={{fontSize:9,color:"rgba(255,255,255,0.6)",fontFamily:"'Jost',sans-serif",fontWeight:500}}>{dbStatus==="loaded"?"Live":"Offline"}</span>
         </div>
@@ -1078,7 +1119,10 @@ function App() {
       {/* Organizer mode — exit button in bottom bar */}
       {app === "organizer" && (
         <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:500,display:"flex",justifyContent:"center"}}>
-          <div style={{background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",display:"flex",alignItems:"center",justifyContent:"flex-end",maxWidth:"var(--app-max-w)",width:"100%",padding:"7px 14px 10px"}}>
+          <div style={{background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,maxWidth:"var(--app-max-w)",width:"100%",padding:"7px 14px 10px"}}>
+            <div onClick={handleSignOut} style={{padding:"4px 14px",borderRadius:8,cursor:"pointer",background:"transparent",border:"1px solid rgba(255,255,255,0.15)"}}>
+              <div style={{fontSize:9,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)"}}>Sign Out</div>
+            </div>
             <div onClick={()=>setApp("onboarding")} style={{padding:"4px 14px",borderRadius:8,cursor:"pointer",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)"}}>
               <div style={{fontSize:9,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>← Exit Organizer</div>
             </div>
@@ -1086,33 +1130,32 @@ function App() {
         </div>
       )}
 
-      {/* Password modal */}
+      {/* Organizer sign-in modal — one sign-in per device, session persists */}
       {showOrgPw && (
         <div style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"0 28px"}}>
           <div style={{background:"var(--surface)",borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:340,border:"1px solid var(--border)",boxShadow:"0 24px 64px rgba(0,0,0,0.4)"}}>
-            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:600,color:"var(--text)",marginBottom:6}}>Organizer <em style={{color:"var(--gold)"}}>Access</em></div>
-            <div style={{fontSize:12,color:"var(--text-soft)",marginBottom:24,fontFamily:"'Jost',sans-serif"}}>Enter your password to continue.</div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:600,color:"var(--text)",marginBottom:6}}>Organizer <em style={{color:"var(--gold)"}}>Sign In</em></div>
+            <div style={{fontSize:12,color:"var(--text-soft)",marginBottom:24,fontFamily:"'Jost',sans-serif"}}>Sign in once — this device stays signed in.</div>
+            <input
+              type="email"
+              value={orgEmail}
+              onChange={e=>{setOrgEmail(e.target.value);setOrgPwError("");}}
+              placeholder="Email"
+              autoFocus
+              style={{width:"100%",padding:"13px 16px",borderRadius:12,border:"1.5px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:15,fontFamily:"'Jost',sans-serif",outline:"none",boxSizing:"border-box",marginBottom:10}}
+            />
             <input
               type="password"
               value={orgPwInput}
-              onChange={e=>{setOrgPwInput(e.target.value);setOrgPwError(false);}}
-              onKeyDown={e=>{
-                if(e.key==="Enter"){
-                  if(orgPwInput==="Ujam44"){localStorage.setItem('pardna_role','organizer');setShowOrgPw(false);setApp("organizer");showAlert("Organizer mode unlocked");}
-                  else{setOrgPwError(true);setOrgPwInput("");}
-                }
-              }}
+              onChange={e=>{setOrgPwInput(e.target.value);setOrgPwError("");}}
+              onKeyDown={e=>{ if(e.key==="Enter") handleOrgLogin(); }}
               placeholder="Password"
-              autoFocus
               style={{width:"100%",padding:"13px 16px",borderRadius:12,border:orgPwError?"1.5px solid #c0392b":"1.5px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:15,fontFamily:"'Jost',sans-serif",outline:"none",boxSizing:"border-box",marginBottom:orgPwError?6:16}}
             />
-            {orgPwError && <div style={{fontSize:11,color:"#c0392b",marginBottom:16,fontFamily:"'Jost',sans-serif"}}>Incorrect password. Try again.</div>}
+            {orgPwError && <div style={{fontSize:11,color:"#c0392b",marginBottom:16,fontFamily:"'Jost',sans-serif"}}>{orgPwError}</div>}
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setShowOrgPw(false)} style={{flex:1,padding:"12px",borderRadius:12,border:"1.5px solid var(--border)",background:"transparent",color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",fontSize:13,fontWeight:500,cursor:"pointer"}}>Cancel</button>
-              <button onClick={()=>{
-                if(orgPwInput==="Ujam44"){localStorage.setItem('pardna_role','organizer');setShowOrgPw(false);setApp("organizer");showAlert("Organizer mode unlocked");}
-                else{setOrgPwError(true);setOrgPwInput("");}
-              }} style={{flex:2,padding:"12px",borderRadius:12,border:"none",background:"var(--header-grad)",color:"white",fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,cursor:"pointer"}}>Unlock</button>
+              <button onClick={handleOrgLogin} disabled={orgAuthBusy} style={{flex:2,padding:"12px",borderRadius:12,border:"none",background:"var(--header-grad)",color:"white",fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,cursor:"pointer",opacity:orgAuthBusy?0.6:1}}>{orgAuthBusy?"Signing in…":"Sign In"}</button>
             </div>
           </div>
         </div>
