@@ -2614,6 +2614,7 @@ function OrgInbox({pending, submissions, goTo, openTheme, showAlert}) {
                   <div style={{fontSize:14,fontWeight:500,color:"var(--text)",fontFamily:"'Jost',sans-serif"}}>{s.nickname}</div>
                   <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{s.hands} hand{s.hands>1?"s":""} · {pm}</div>
                 </div>
+                <button onClick={()=>{dismissSubmission(s.id);showAlert(`${s.nickname} removed`);}} style={{padding:"6px 14px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",border:"none",background:"var(--bg-mid)",color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",flexShrink:0}}>Remove</button>
               </div>
             );
           })}
