@@ -124,7 +124,7 @@ let _createdGroups = [];
 function saveCreatedGroup(group) {
   _createdGroups.push(group);
   const localId = `local_${Date.now()}`;
-  const newGroup = { ...group, id: localId, memberCount: 0 };
+  const newGroup = { ...group, id: localId, memberCount: 0, status: "active" };
   _state = { ..._state, groups: [newGroup, ..._state.groups], group: newGroup, activeGroupId: localId, members: [], paymentOverrides: {}, submissions: [] };
   notify();
   if (SUPABASE_AVAILABLE) {
@@ -211,6 +211,35 @@ async function switchGroup(groupId) {
 function getPotValue()   { return _state.members.length * _state.group.handAmount; }
 function getDateLabels() { return _state.group.dates.map(d => d.replace(/, 20\d{2}/g,"")); }
 
+// One person can hold several hands ("Maya (H1)", "Maya (H2)") — this strips
+// the hand suffix so all of a person's hands can be grouped under one identity.
+function personBaseName(name) { return (name || "").replace(/\s*\(H\d+\)\s*$/i, "").trim(); }
+
+// ─── ARCHIVE / DELETE GROUPS ─────────────────────────────────────────────────
+async function setGroupStatus(groupId, status) {
+  _state = { ..._state, groups: _state.groups.map(g => g.id === groupId ? { ...g, status } : g) };
+  notify();
+  if (SUPABASE_AVAILABLE && _dbReady) {
+    const { error } = await supabase.from("groups").update({ status }).eq("id", groupId);
+    if (error) console.error("Error updating group status:", error);
+  }
+}
+
+// Permanently removes a group and everything tied to it (members, payments,
+// submissions). Callers are responsible for confirming with the user first.
+async function deleteGroupCascade(groupId) {
+  _state = { ..._state, groups: _state.groups.filter(g => g.id !== groupId) };
+  delete _membersByGroupId[groupId];
+  notify();
+  if (SUPABASE_AVAILABLE && _dbReady) {
+    await supabase.from("payments").delete().eq("group_id", groupId);
+    await supabase.from("members").delete().eq("group_id", groupId);
+    await supabase.from("submissions").delete().eq("group_id", groupId);
+    const { error } = await supabase.from("groups").delete().eq("id", groupId);
+    if (error) console.error("Error deleting group:", error);
+  }
+}
+
 // ─── SUPABASE: LOAD DATA ON STARTUP ──────────────────────────────────────────
 async function loadFromSupabase() {
   if (!SUPABASE_AVAILABLE) {
@@ -220,7 +249,7 @@ async function loadFromSupabase() {
   try {
     // Load all active groups
     const { data: groups, error: gErr } = await supabase
-      .from("groups").select("*").eq("status", "active").order("created_at", {ascending: false});
+      .from("groups").select("*").in("status", ["active", "archived"]).order("created_at", {ascending: false});
 
     if (gErr) { console.error("Error loading groups:", gErr); return false; }
 
@@ -230,13 +259,27 @@ async function loadFromSupabase() {
         frequency: g.frequency.charAt(0).toUpperCase() + g.frequency.slice(1),
         startDate: g.dates[0] || g.start_date, endDate: g.dates[g.dates.length-1] || g.end_date,
         dates: g.dates, paidThrough: g.paid_through, openRound: g.open_round, memberCount: 0,
+        status: g.status || "active",
       });
       _state.groups = groups.map(mapGroup);
 
-      const g = groups[0];
+      // If arriving via a member link, open THAT member's group — links must
+      // keep working no matter which group is newest.
+      let linkedGroup = null;
+      try {
+        const urlMember = new URLSearchParams(window.location.search).get("member");
+        if (urlMember) {
+          const dbId = urlMember.replace(/^db_/, "");
+          const { data: mRow } = await supabase.from("members").select("group_id").eq("id", dbId).maybeSingle();
+          if (mRow) linkedGroup = groups.find(x => x.id === mRow.group_id) || null;
+        }
+      } catch (e) { /* bad id in URL — fall through to default */ }
+
+      // Otherwise open on the newest ACTIVE group; archived ones are only listed
+      const g = linkedGroup || groups.find(x => (x.status || "active") === "active") || groups[0];
       _dbGroupId = g.id;
       _state.activeGroupId = g.id;
-      _state.group = _state.groups[0];
+      _state.group = _state.groups.find(x => x.id === g.id);
 
       // Load members for this group
       const { data: members, error: mErr } = await supabase
@@ -930,6 +973,26 @@ function ThemeModal({current, onSelect, onClose}) {
   );
 }
 
+function DeleteGroupModal({group, onConfirm, onClose}) {
+  const [input, setInput] = useState("");
+  const match = input.trim().toLowerCase() === group.name.trim().toLowerCase();
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"0 28px"}}>
+      <div style={{background:"var(--surface)",borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:340,border:"1px solid var(--border)",boxShadow:"0 24px 64px rgba(0,0,0,0.4)"}}>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:600,color:"var(--text)",marginBottom:6}}>Delete <em style={{color:"#C03030"}}>{group.name}</em>?</div>
+        <div style={{fontSize:12,color:"var(--text-soft)",marginBottom:18,fontFamily:"'Jost',sans-serif",lineHeight:1.6}}>This permanently erases this group — every member, payment record, and submission. It <strong>cannot be undone</strong>. Type the group name below to confirm.</div>
+        <input value={input} onChange={e=>setInput(e.target.value)} placeholder={group.name} autoFocus
+          style={{width:"100%",padding:"13px 16px",borderRadius:12,border:"1.5px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:15,fontFamily:"'Jost',sans-serif",outline:"none",boxSizing:"border-box",marginBottom:16}}/>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:12,border:"1.5px solid var(--border)",background:"transparent",color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",fontSize:13,fontWeight:500,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>match&&onConfirm()} disabled={!match}
+            style={{flex:2,padding:"12px",borderRadius:12,border:"none",background:"#C03030",color:"white",fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,cursor:match?"pointer":"default",opacity:match?1:0.35}}>Delete Forever</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsBtn({onClick}) {
   return <div onClick={onClick} style={{position:"absolute",top:50,right:20,width:38,height:38,borderRadius:"50%",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,cursor:"pointer",zIndex:10}}>🎨</div>;
 }
@@ -1096,9 +1159,19 @@ function OrgHome({members, pending, submissions, groups, switchGroup, goTo, open
   const pct = Math.round(((PAID_THROUGH+1)/getTotalHands())*100);
   const nextMember = members.find(m=>m.pi===OPEN_ROUND);
   const approved = (submissions||[]).filter(s=>s.status==="approved");
+  const activeGroups   = (groups||[]).filter(g => (g.status||"active") === "active");
+  const archivedGroups = (groups||[]).filter(g => g.status === "archived");
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const handleDeleteArchived = async () => {
+    const g = confirmDelete;
+    setConfirmDelete(null);
+    await deleteGroupCascade(g.id);
+    showAlert(`${g.name} deleted`);
+  };
 
   return (
     <div>
+      {confirmDelete && <DeleteGroupModal group={confirmDelete} onConfirm={handleDeleteArchived} onClose={()=>setConfirmDelete(null)}/>}
       {/* Header */}
       <div style={{background:"var(--header-grad)",padding:"54px var(--pad) 32px",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",width:220,height:220,borderRadius:"50%",background:"radial-gradient(circle,rgba(201,144,106,0.18) 0%,transparent 70%)",top:-60,right:-60,pointerEvents:"none"}}/>
@@ -1148,7 +1221,7 @@ function OrgHome({members, pending, submissions, groups, switchGroup, goTo, open
       {/* Your Circles */}
       <div style={{padding:"var(--pad) var(--pad) 0"}}>
         <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13}}>Your Circles</div>
-        {(groups||[]).map(g => {
+        {activeGroups.map(g => {
           const isActive = g.id === getGroup().id;
           const gRound = computeOpenRound(g.dates||[]);
           const gPaidThrough = Math.max(0, gRound - 1);
@@ -1200,6 +1273,28 @@ function OrgHome({members, pending, submissions, groups, switchGroup, goTo, open
           );
         })}
       </div>
+
+      {/* Archived circles */}
+      {archivedGroups.length > 0 && (
+        <div style={{padding:"var(--pad) var(--pad) 0"}}>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:13}}>Archived</div>
+          {archivedGroups.map(g => (
+            <div key={g.id} style={{background:"var(--bg-mid)",borderRadius:18,padding:"14px 16px",border:"1px solid var(--border)",marginBottom:10,opacity:0.8}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:38,height:38,borderRadius:11,background:"var(--surface)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>📦</div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>{g.name}</div>
+                  <div style={{fontSize:10,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{g.frequency} · ${g.handAmount}/hand · {g.startDate} – {g.endDate}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}}>
+                <button onClick={()=>{setGroupStatus(g.id,"active");showAlert(`${g.name} restored ✦`);}} style={{flex:1,padding:"9px",borderRadius:10,border:"1.5px solid var(--border)",background:"var(--surface)",color:"var(--primary)",fontFamily:"'Jost',sans-serif",fontSize:11,fontWeight:600,cursor:"pointer"}}>↩ Restore</button>
+                <button onClick={()=>setConfirmDelete(g)} style={{flex:1,padding:"9px",borderRadius:10,border:"1.5px solid #E0555533",background:"transparent",color:"#C03030",fontFamily:"'Jost',sans-serif",fontSize:11,fontWeight:600,cursor:"pointer"}}>Delete…</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Create new group */}
       <div style={{padding:"var(--pad) var(--pad) 0"}}>
@@ -1465,7 +1560,10 @@ function OrgSchedule({members, goTo, openTheme}) {
         <div className="resp-grid">
         {members.map(m=>{
           const status = m.pi<=getGroup().paidThrough?"paid":m.pi===getGroup().openRound?"current":"upcoming";
-          const memberLink = `${window.location.origin}${window.location.pathname}?member=${m.id}`;
+          // One link per PERSON: every hand's card copies the same link (the
+          // first hand's id), and the member view shows all their hands.
+          const firstHand = members.filter(x=>personBaseName(x.name)===personBaseName(m.name)).sort((a,b)=>a.pi-b.pi)[0] || m;
+          const memberLink = `${window.location.origin}${window.location.pathname}?member=${firstHand.id}`;
           const copyLink = () => {
             navigator.clipboard.writeText(memberLink).catch(()=>{
               const ta=document.createElement("textarea");ta.value=memberLink;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
@@ -1484,7 +1582,7 @@ function OrgSchedule({members, goTo, openTheme}) {
                 <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:19,fontWeight:700,color:status==="paid"?"var(--green)":status==="current"?"var(--accent)":"var(--text-soft)",flexShrink:0}}>${getPotValue().toLocaleString()}</div>
               </div>
               <div onClick={copyLink} style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
-                <div style={{fontSize:10,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"75%",opacity:0.7}}>?member={m.id}</div>
+                <div style={{fontSize:10,color:"var(--text-soft)",fontFamily:"'Jost',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"75%",opacity:0.7}}>{firstHand.id!==m.id?"Same link · all hands":`?member=${firstHand.id}`}</div>
                 <div style={{fontSize:10,fontWeight:600,color:"var(--primary)",fontFamily:"'Jost',sans-serif",flexShrink:0,letterSpacing:"0.05em"}}>Copy Link ↗</div>
               </div>
             </div>
@@ -1811,6 +1909,27 @@ function OrgEdit({goTo, openTheme, showAlert, theme, initialSection}) {
     showAlert(`${addRoundCount} round${addRoundCount > 1 ? "s" : ""} added ✦`);
   };
 
+  // Archiving/deleting the group you're currently in — the app always needs
+  // at least one active circle, so both require another active group to exist.
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
+  const otherActive = (getGroups()||[]).filter(x => x.id !== group.id && (x.status||"active") === "active");
+  const handleArchiveGroup = async () => {
+    if (!otherActive.length) { showAlert("You need at least one active circle — create your next group first"); return; }
+    await setGroupStatus(group.id, "archived");
+    await switchGroup(otherActive[0].id);
+    showAlert(`${group.name} archived 📦 — find it on your dashboard`);
+    goTo("home");
+  };
+  const handleDeleteGroup = async () => {
+    setConfirmDeleteGroup(false);
+    if (!otherActive.length) { showAlert("You need at least one active circle — create your next group first"); return; }
+    const name = group.name;
+    await deleteGroupCascade(group.id);
+    await switchGroup(otherActive[0].id);
+    showAlert(`${name} deleted`);
+    goTo("home");
+  };
+
   const TOTAL = getTotalHands();
   const POT = getPotValue();
   const DL = getDateLabels();
@@ -1920,6 +2039,17 @@ function OrgEdit({goTo, openTheme, showAlert, theme, initialSection}) {
                   <div style={{fontSize:9,color:"rgba(255,255,255,0.5)",marginTop:3,fontFamily:"'Jost',sans-serif"}}>{l}</div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Danger zone */}
+          {confirmDeleteGroup && <DeleteGroupModal group={group} onConfirm={handleDeleteGroup} onClose={()=>setConfirmDeleteGroup(false)}/>}
+          <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",borderRadius:18,padding:"18px",border:"1px solid #E0555533"}}>
+            <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"#C03030",marginBottom:6,fontFamily:"'Jost',sans-serif"}}>Danger zone</div>
+            <div style={{fontSize:11,color:"var(--text-soft)",lineHeight:1.6,marginBottom:14,fontFamily:"'Jost',sans-serif"}}>Archiving hides this circle from your dashboard but keeps every record — you can restore it anytime. Deleting erases it forever.</div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={handleArchiveGroup} style={{flex:1,padding:"12px",borderRadius:12,border:"1.5px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontFamily:"'Jost',sans-serif",fontSize:12,fontWeight:600,cursor:"pointer"}}>📦 Archive Group</button>
+              <button onClick={()=>setConfirmDeleteGroup(true)} style={{flex:1,padding:"12px",borderRadius:12,border:"1.5px solid #E0555555",background:"transparent",color:"#C03030",fontFamily:"'Jost',sans-serif",fontSize:12,fontWeight:600,cursor:"pointer"}}>Delete Group…</button>
             </div>
           </div>
         </div>
@@ -2637,8 +2767,11 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
     const handleIdentify = () => {
       const input = nameInput.trim().toLowerCase();
       if (!input) { setNameError("Please enter your name."); return; }
-      const matches = members.filter(m => m.name.replace(/\s*\(.*\)/,"").toLowerCase() === input || m.name.toLowerCase() === input);
-      if (matches.length === 1) { setMemberId(matches[0].id); setNameError(""); }
+      const matches = members.filter(m => personBaseName(m.name).toLowerCase() === input || m.name.toLowerCase() === input);
+      // Several hands belonging to the SAME person resolve fine — only truly
+      // different people sharing a name need their personal link.
+      const distinctPeople = new Set(matches.map(m => personBaseName(m.name).toLowerCase()));
+      if (distinctPeople.size === 1) { setMemberId(matches[0].id); setNameError(""); }
       else if (matches.length > 1) setNameError("Multiple members share this name. Please use your personal link sent by your organizer.");
       else setNameError("Name not found. Check spelling or contact your organizer.");
     };
@@ -2656,11 +2789,17 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
       </div>
     );
   }
-  const firstName    = member.name.replace(/\s*\(.*\)/,"").split(" ")[0];
+  // One person, one link: gather every hand this person holds so their view
+  // shows all payouts and the full amount they owe each round.
+  const myHands      = members.filter(m => personBaseName(m.name) === personBaseName(member.name)).sort((a,b)=>a.pi-b.pi);
+  const multi        = myHands.length > 1;
+  const firstName    = personBaseName(member.name).split(" ")[0];
   const payoutDate   = getDateLabels()[member.pi];
   const payoutDone   = member.pi<=PAID_THROUGH;
-  const isPayoutNow  = member.pi===OPEN_ROUND;
-  const openPaid     = isPaid(member.id, OPEN_ROUND);
+  const isPayoutNow  = myHands.some(h => h.pi === OPEN_ROUND);
+  const handsPaidOpen= myHands.filter(h => isPaid(h.id, OPEN_ROUND)).length;
+  const openPaid     = handsPaidOpen === myHands.length;
+  const duePerRound  = getGroup().handAmount * myHands.length;
   const payoutIcon   = theme==="rosegold"?"🌸":"💰";
 
   return (
@@ -2676,30 +2815,39 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:13,color:"rgba(255,255,255,0.5)",position:"relative",marginBottom:4}}>Welcome back,</div>
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:600,color:"white",lineHeight:1.05,position:"relative"}}>{firstName} <em style={{color:"var(--gold-light)"}}>✦</em></div>
         <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.18)",borderRadius:20,padding:"5px 13px",fontSize:11,color:"rgba(255,255,255,0.65)",marginTop:10,position:"relative",fontWeight:500,fontFamily:"'Jost',sans-serif"}}>
-          {theme==="rosegold"?"🌹":"✦"} {getGroup().name} · ${getGroup().handAmount}/hand · Slot {member.pi+1} of {getTotalHands()}
+          {theme==="rosegold"?"🌹":"✦"} {getGroup().name} · ${getGroup().handAmount}/hand · {multi ? `${myHands.length} hands · Slots ${myHands.map(h=>h.pi+1).join(" & ")}` : `Slot ${member.pi+1}`} of {getTotalHands()}
         </div>
         <SettingsBtn onClick={()=>setShowTheme(true)}/>
         <div style={{position:"absolute",bottom:-1,left:0,right:0,height:28,background:"var(--bg)",borderRadius:"28px 28px 0 0"}}/>
       </div>
 
-      {/* Payout hero */}
+      {/* Payout hero — multi-hand people see one card listing every payout */}
       <div style={{margin:"24px var(--pad) 0",background:"var(--header-grad)",borderRadius:24,padding:24,position:"relative",overflow:"hidden",boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:3,borderRadius:"24px 24px 0 0",background:"var(--shimmer)"}}/>
         <div style={{position:"absolute",width:160,height:160,borderRadius:"50%",background:"radial-gradient(circle,rgba(255,255,255,0.06) 0%,transparent 70%)",top:-40,right:-40,pointerEvents:"none"}}/>
-        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",marginBottom:8,fontFamily:"'Jost',sans-serif"}}>{payoutDone?"Your payout — received":"Your payout — coming up"}</div>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",marginBottom:8,fontFamily:"'Jost',sans-serif"}}>
+          {multi ? `Your payouts — ${myHands.length} hands` : payoutDone?"Your payout — received":"Your payout — coming up"}
+        </div>
         <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:52,fontWeight:700,color:"white",lineHeight:1}}>
-          <span style={{fontSize:26,color:"var(--gold-light)",verticalAlign:"top",marginTop:10,display:"inline-block"}}>$</span>{getPotValue().toLocaleString()}
+          <span style={{fontSize:26,color:"var(--gold-light)",verticalAlign:"top",marginTop:10,display:"inline-block"}}>$</span>{(getPotValue()*myHands.length).toLocaleString()}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.12)"}}>
-          <div style={{width:32,height:32,borderRadius:8,background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{payoutDone?"✓":isPayoutNow?payoutIcon:"📅"}</div>
-          <div>
-            <div style={{fontSize:14,fontWeight:500,color:"white",fontFamily:"'Jost',sans-serif"}}>{payoutDate}</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:1,fontFamily:"'Jost',sans-serif"}}>
-              {payoutDone?"Disbursed — thank you for your trust":isPayoutNow?"This round — your payout is coming":`${member.pi-OPEN_ROUND} round${member.pi-OPEN_ROUND!==1?"s":""} away`}
+        {multi && <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:4,fontFamily:"'Jost',sans-serif"}}>${getPotValue().toLocaleString()} per hand, on {myHands.length} dates</div>}
+        {myHands.map((h, hi) => {
+          const done = h.pi<=PAID_THROUGH;
+          const now  = h.pi===OPEN_ROUND;
+          return (
+            <div key={h.id} style={{display:"flex",alignItems:"center",gap:8,marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.12)"}}>
+              <div style={{width:32,height:32,borderRadius:8,background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{done?"✓":now?payoutIcon:"📅"}</div>
+              <div>
+                <div style={{fontSize:14,fontWeight:500,color:"white",fontFamily:"'Jost',sans-serif"}}>{getDateLabels()[h.pi]}{multi?` · $${getPotValue().toLocaleString()}`:""}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:1,fontFamily:"'Jost',sans-serif"}}>
+                  {done?"Disbursed — thank you for your trust":now?"This round — your payout is coming":`${h.pi-OPEN_ROUND} round${h.pi-OPEN_ROUND!==1?"s":""} away`}
+                </div>
+              </div>
+              <div style={{marginLeft:"auto",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"6px 12px",fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontWeight:600,color:"var(--gold-light)",flexShrink:0}}>{multi?`Hand ${hi+1} · `:""}Slot {h.pi+1}</div>
             </div>
-          </div>
-          <div style={{marginLeft:"auto",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"6px 12px",fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontWeight:600,color:"var(--gold-light)",flexShrink:0}}>Slot {member.pi+1}</div>
-        </div>
+          );
+        })}
       </div>
 
       {/* Open round banner */}
@@ -2717,9 +2865,13 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
           <div style={{width:44,height:44,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,background:openPaid?"var(--green-bg)":"var(--accent-pale)"}}>{openPaid?"✓":"💳"}</div>
           <div>
             <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontWeight:600,color:"var(--text)"}}>{openPaid?`Round ${OPEN_ROUND+1} — paid`:`Round ${OPEN_ROUND+1} — open now`}</div>
-            <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>{openPaid?`${getDateLabels()[OPEN_ROUND]} · Thank you!`:`Due ${getDateLabels()[OPEN_ROUND]} · Send via ${member.pay}`}</div>
+            <div style={{fontSize:11,color:"var(--text-soft)",marginTop:2,fontFamily:"'Jost',sans-serif"}}>
+              {openPaid?`${getDateLabels()[OPEN_ROUND]} · Thank you!`
+                : multi && handsPaidOpen>0 ? `Due ${getDateLabels()[OPEN_ROUND]} · ${handsPaidOpen} of ${myHands.length} hands paid`
+                : `Due ${getDateLabels()[OPEN_ROUND]} · Send via ${member.pay}`}
+            </div>
           </div>
-          <div style={{marginLeft:"auto",fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,flexShrink:0,color:openPaid?"var(--green)":"var(--primary)"}}>{openPaid?"✓":"$"+getGroup().handAmount}</div>
+          <div style={{marginLeft:"auto",fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:700,flexShrink:0,color:openPaid?"var(--green)":"var(--primary)"}}>{openPaid?"✓":"$"+(duePerRound - handsPaidOpen*getGroup().handAmount)}</div>
         </div>
       )}
 
@@ -2729,8 +2881,10 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(68px, 1fr))",gap:8}}>
           {getDateLabels().map((d,di)=>{
             const [mon,day]=d.split(" ");
-            const isPayoutSlot=member.pi===di;
-            const paid=isPaid(member.id,di);
+            const isPayoutSlot=myHands.some(h=>h.pi===di);
+            const paidCount=myHands.filter(h=>isPaid(h.id,di)).length;
+            const paid=paidCount===myHands.length;
+            const partial=paidCount>0&&!paid;
             const status=isPayoutSlot?"payout":di<OPEN_ROUND?"paid":di===OPEN_ROUND?"open":"future";
             return (
               <div key={di} style={{background:status==="payout"?"var(--header-grad)":status==="future"?"var(--bg)":"var(--surface)",borderRadius:14,padding:"10px 6px 8px",border:`1px ${status==="open"?"dashed":"solid"} ${status==="payout"?"transparent":status==="open"?"var(--gold)":"var(--border)"}`,textAlign:"center"}}>
@@ -2744,7 +2898,9 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
                       : status==="open"
                         ? paid
                           ? <div style={{width:16,height:16,borderRadius:"50%",background:"var(--green)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"white",fontWeight:700}}>✓</div>
-                          : <div style={{width:16,height:16,borderRadius:"50%",border:"1.5px dashed var(--gold)"}}/>
+                          : partial
+                            ? <div style={{minWidth:16,height:16,borderRadius:8,background:"var(--green-bg)",border:"1px solid var(--green)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"var(--green)",fontWeight:700,padding:"0 3px",fontFamily:"'Jost',sans-serif"}}>{paidCount}/{myHands.length}</div>
+                            : <div style={{width:16,height:16,borderRadius:"50%",border:"1.5px dashed var(--gold)"}}/>
                         : <div style={{width:16,height:16,borderRadius:"50%",border:"1.5px solid var(--border)"}}/>}
                 </div>
               </div>
@@ -2758,11 +2914,12 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
         <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>My payment dates</div>
         <div className="resp-grid" style={{display:"flex",flexDirection:"column",gap:8}}>
           {getDateLabels().map((d,di)=>{
-            const isPayoutSlot = member.pi===di;
-            const paid = isPaid(member.id, di);
+            const payoutHand = myHands.find(h=>h.pi===di);
+            const isPayoutSlot = !!payoutHand;
+            const paid = myHands.every(h=>isPaid(h.id, di));
             const status = isPayoutSlot?"payout":di<OPEN_ROUND?"paid":di===OPEN_ROUND?(paid?"paid":"open"):"upcoming";
-            const statusLabel = isPayoutSlot?"Your payout 🎉":status==="paid"?"Paid":status==="open"?"Due now":"Upcoming";
-            const amountLabel = isPayoutSlot?`+$${getPotValue().toLocaleString()}`:`-$${getGroup().handAmount}`;
+            const statusLabel = isPayoutSlot?(multi?`Your payout 🎉 · Hand ${myHands.indexOf(payoutHand)+1}`:"Your payout 🎉"):status==="paid"?"Paid":status==="open"?"Due now":"Upcoming";
+            const amountLabel = isPayoutSlot?`+$${getPotValue().toLocaleString()}`:`-$${duePerRound}`;
             const amountColor = isPayoutSlot?"var(--green)":status==="paid"?"var(--text-soft)":status==="open"?"var(--primary)":"var(--text-soft)";
             const rowBg = isPayoutSlot?"var(--accent-pale)":status==="open"?"var(--surface)":"var(--surface)";
             const borderColor = isPayoutSlot?"var(--accent)":status==="open"?"var(--gold)":"var(--border)";
