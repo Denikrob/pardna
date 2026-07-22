@@ -32,7 +32,7 @@ html, body { min-height: 100vh; background: #1a0a0a; }
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
 
 // ─── SUPABASE CLIENT ─────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://hnswiczrtrwoorzsvqlk.supabase.co";
@@ -1381,6 +1381,11 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
   const OPEN_ROUND   = getGroup().openRound;
   const [isDragging, setIsDragging] = useState(false);
   const [dragValue, setDragValue] = useState(null);
+  // Mouse drag-to-fill toggles cells on pointerdown, so onClick must skip
+  // those (or it'd double-toggle). Touch has no drag-fill — a tap only ever
+  // reaches onClick, which the browser already fires solely for genuine taps
+  // (never after a horizontal-scroll gesture), so it just works there.
+  const toggledByPointerRef = useRef(false);
   const months = getDateLabels().map(d=>d.split(" ")[0]);
   const days   = getDateLabels().map(d=>d.split(" ")[1]);
   const filtered = members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase()));
@@ -1527,7 +1532,7 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
       </div>
 
       <div style={{margin:"12px 20px 0",borderRadius:18,overflow:"hidden",border:"1px solid var(--border)",background:"var(--surface)",overflowX:"auto",scrollbarWidth:"thin",scrollbarColor:"var(--border) transparent"}}>
-        <table onMouseUp={()=>setIsDragging(false)} onMouseLeave={()=>setIsDragging(false)} style={{borderCollapse:"collapse",minWidth:"100%"}}>
+        <table onPointerUp={()=>setIsDragging(false)} onPointerLeave={()=>setIsDragging(false)} style={{borderCollapse:"collapse",minWidth:"100%"}}>
           <thead>
             <tr>
               <th style={{position:"sticky",left:0,background:"var(--primary-deep)",fontSize:8,color:"rgba(255,255,255,0.3)",fontWeight:700,padding:"5px 12px",textAlign:"left",minWidth:150,zIndex:5,boxShadow:"2px 0 8px rgba(0,0,0,0.2)"}}>MEMBER</th>
@@ -1553,10 +1558,16 @@ function OrgGrid({members, goTo, openTheme, showAlert, theme}) {
                   const isOpen = di===getGroup().openRound;
                   return (
                     <td key={di}
-                      onMouseDown={(e)=>{e.preventDefault();const nv=!isPaid(m.id,di);setIsDragging(true);setDragValue(nv);togglePayment(m.id,di);}}
-                      onMouseEnter={()=>{if(!isDragging)return;const cur=isPaid(m.id,di);if(cur!==dragValue)setPayment(m.id,di,dragValue);}}
-                      onMouseUp={()=>setIsDragging(false)}
-                      style={{textAlign:"center",verticalAlign:"middle",height:42,width:42,minWidth:42,borderBottom:"1px solid var(--border)",borderRight:"1px solid var(--border)",cursor:"pointer",background:isOpen&&!isPayoutSlot?"rgba(201,144,106,0.04)":"inherit",userSelect:"none"}}>
+                      onPointerDown={(e)=>{
+                        if (e.pointerType !== "mouse") return; // touch: let onClick handle the tap
+                        e.preventDefault();
+                        const nv=!isPaid(m.id,di);setIsDragging(true);setDragValue(nv);togglePayment(m.id,di);
+                        toggledByPointerRef.current = true;
+                      }}
+                      onPointerEnter={(e)=>{if(e.pointerType!=="mouse"||!isDragging||e.buttons!==1)return;const cur=isPaid(m.id,di);if(cur!==dragValue)setPayment(m.id,di,dragValue);}}
+                      onPointerUp={()=>setIsDragging(false)}
+                      onClick={()=>{if(toggledByPointerRef.current){toggledByPointerRef.current=false;return;}togglePayment(m.id,di);}}
+                      style={{textAlign:"center",verticalAlign:"middle",height:42,width:42,minWidth:42,borderBottom:"1px solid var(--border)",borderRight:"1px solid var(--border)",cursor:"pointer",background:isOpen&&!isPayoutSlot?"rgba(201,144,106,0.04)":"inherit",userSelect:"none",touchAction:"pan-x"}}>
                       {isPayoutSlot
                         ? <div style={{width:24,height:24,borderRadius:6,background:paid?"var(--green)":"var(--shimmer)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,transition:"background 0.2s"}}>{theme==="rosegold"?"🌸":"💰"}</div>
                         : paid
