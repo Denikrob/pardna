@@ -2875,50 +2875,20 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
         </div>
       )}
 
-      {/* Payment history */}
+      {/* My Hands — one row per round: dates, payouts, and paid status */}
       <div style={{padding:"24px var(--pad) 0"}}>
-        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>Your payment history</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(68px, 1fr))",gap:8}}>
-          {getDateLabels().map((d,di)=>{
-            const [mon,day]=d.split(" ");
-            const isPayoutSlot=myHands.some(h=>h.pi===di);
-            const paidCount=myHands.filter(h=>isPaid(h.id,di)).length;
-            const paid=paidCount===myHands.length;
-            const partial=paidCount>0&&!paid;
-            const status=isPayoutSlot?"payout":di<OPEN_ROUND?"paid":di===OPEN_ROUND?"open":"future";
-            return (
-              <div key={di} style={{background:status==="payout"?"var(--header-grad)":status==="future"?"var(--bg)":"var(--surface)",borderRadius:14,padding:"10px 6px 8px",border:`1px ${status==="open"?"dashed":"solid"} ${status==="payout"?"transparent":status==="open"?"var(--gold)":"var(--border)"}`,textAlign:"center"}}>
-                <div style={{fontSize:8,fontWeight:700,letterSpacing:"0.5px",textTransform:"uppercase",color:status==="payout"?"rgba(255,255,255,0.6)":"var(--text-soft)",marginBottom:4,fontFamily:"'Jost',sans-serif"}}>{mon}</div>
-                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,fontWeight:700,color:status==="payout"?"white":status==="future"?"var(--text-soft)":"var(--primary)",lineHeight:1,opacity:status==="future"?0.6:1}}>{day}</div>
-                <div style={{marginTop:5,display:"flex",justifyContent:"center"}}>
-                  {isPayoutSlot
-                    ? <span style={{fontSize:13,lineHeight:1}}>{payoutIcon}</span>
-                    : status==="paid"
-                      ? <div style={{width:16,height:16,borderRadius:"50%",background:"var(--green)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"white",fontWeight:700}}>✓</div>
-                      : status==="open"
-                        ? paid
-                          ? <div style={{width:16,height:16,borderRadius:"50%",background:"var(--green)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"white",fontWeight:700}}>✓</div>
-                          : partial
-                            ? <div style={{minWidth:16,height:16,borderRadius:8,background:"var(--green-bg)",border:"1px solid var(--green)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"var(--green)",fontWeight:700,padding:"0 3px",fontFamily:"'Jost',sans-serif"}}>{paidCount}/{myHands.length}</div>
-                            : <div style={{width:16,height:16,borderRadius:"50%",border:"1.5px dashed var(--gold)"}}/>
-                        : <div style={{width:16,height:16,borderRadius:"50%",border:"1.5px solid var(--border)"}}/>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* My Payment Dates */}
-      <div style={{padding:"24px var(--pad) 0"}}>
-        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>My payment dates</div>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:"2.5px",textTransform:"uppercase",color:"var(--text-soft)",marginBottom:14,fontFamily:"'Jost',sans-serif"}}>My Hands</div>
         <div className="resp-grid" style={{display:"flex",flexDirection:"column",gap:8}}>
           {getDateLabels().map((d,di)=>{
             const payoutHand = myHands.find(h=>h.pi===di);
             const isPayoutSlot = !!payoutHand;
-            const paid = myHands.every(h=>isPaid(h.id, di));
+            const paidHands = myHands.filter(h=>isPaid(h.id, di)).length;
+            const paid = paidHands === myHands.length;
             const status = isPayoutSlot?"payout":di<OPEN_ROUND?"paid":di===OPEN_ROUND?(paid?"paid":"open"):"upcoming";
-            const statusLabel = isPayoutSlot?(multi?`Your payout 🎉 · Hand ${myHands.indexOf(payoutHand)+1}`:"Your payout 🎉"):status==="paid"?"Paid":status==="open"?"Due now":"Upcoming";
+            const statusLabel = isPayoutSlot?(multi?`Your payout 🎉 · Hand ${myHands.indexOf(payoutHand)+1}`:"Your payout 🎉")
+              :status==="paid"?"Paid"
+              :status==="open"?(multi&&paidHands>0?`Due now · ${paidHands} of ${myHands.length} hands paid`:"Due now")
+              :"Upcoming";
             const amountLabel = isPayoutSlot?`+$${getPotValue().toLocaleString()}`:`-$${duePerRound}`;
             const amountColor = isPayoutSlot?"var(--green)":status==="paid"?"var(--text-soft)":status==="open"?"var(--primary)":"var(--text-soft)";
             const rowBg = isPayoutSlot?"var(--accent-pale)":status==="open"?"var(--surface)":"var(--surface)";
