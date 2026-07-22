@@ -272,6 +272,13 @@ async function loadFromSupabase() {
         _state.paymentOverrides = {};
         _membersByGroupId[g.id] = _state.members;
         _state.groups = _state.groups.map(gr => gr.id===g.id ? {...gr, memberCount:_state.members.length} : gr);
+      } else {
+        // Group exists in the DB but has no members yet (e.g. brand-new group).
+        // Clear the in-memory seed fallback so it doesn't inherit Harvest
+        // Table's members and their payment history.
+        _state.members = [];
+        _state.paymentOverrides = {};
+        _membersByGroupId[g.id] = [];
       }
 
       // Load submissions
@@ -586,7 +593,9 @@ function moveMemberToSlot(memberId, targetSlotIndex) {
 // Add rounds to the group (extend the cycle)
 function addRounds(count) {
   const g = _state.group;
-  const lastDate = g.dates[g.dates.length - 1];
+  // Dates are stored as labels ("Oct 23, 2026") but generateCycleDates expects
+  // input format ("2026-10-23") — convert first or every added date is invalid
+  const lastDate = toInputDate(g.dates[g.dates.length - 1]);
   const freq = g.frequency.toLowerCase();
   const newDates = generateCycleDates(lastDate, freq, count + 1).slice(1);
   const allDates = [...g.dates, ...newDates];
@@ -2161,7 +2170,26 @@ function OrgGenerate({submissions, goTo, openTheme, showAlert, theme}) {
     }
   };
 
+  // Every hand needs its own payout date: all approved hands + 1 for the organizer (slot 1)
+  const totalHands = approved.reduce((s, x) => s + (x.hands || 0), 0) + 1;
+  const shortfall = totalHands - g.dates.length;
+
+  // Once any payment is recorded the Susu is closed — re-applying a schedule
+  // would wipe the member list and payment history, so it's blocked.
+  const paymentsStarted = (() => {
+    const st = getState();
+    return st.members.some(m => (m.paid || []).some(p => p === 1))
+        || Object.values(st.paymentOverrides || {}).some(Boolean);
+  })();
+
+  const handleAddRounds = () => {
+    addRounds(shortfall);
+    setResult(generateSchedule(approved));
+    showAlert(`${shortfall} round${shortfall > 1 ? "s" : ""} added ✦ Schedule regenerated`);
+  };
+
   const handleApply = async () => {
+    if (paymentsStarted) { showAlert("Payments have started — this Susu is closed"); return; }
     await applySchedule(result);
     setApplied(true);
     showAlert("Schedule applied ✦ Members are set!");
@@ -2195,8 +2223,26 @@ function OrgGenerate({submissions, goTo, openTheme, showAlert, theme}) {
         </div>
       ) : (
         <div>
+          {/* Hands vs dates tally */}
+          {shortfall > 0 ? (
+            <div style={{margin:"var(--pad) var(--pad) 0",background:"#FFF7EC",borderRadius:16,padding:"14px 16px",border:"1px solid #D4882A"}}>
+              <div style={{fontSize:12,fontWeight:600,color:"#9A6215",marginBottom:6,fontFamily:"'Jost',sans-serif"}}>⚠ {totalHands} hands need a payout date, but the cycle only has {g.dates.length}</div>
+              <div style={{fontSize:11,color:"#9A6215",lineHeight:1.5,fontFamily:"'Jost',sans-serif",marginBottom:10}}>Add {shortfall} more round{shortfall>1?"s":""} so everyone fits — the dates, cycle length, and full-cycle pot update automatically.</div>
+              <button onClick={handleAddRounds} style={{width:"100%",padding:"12px",background:"#D4882A",color:"white",border:"none",borderRadius:12,fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,cursor:"pointer"}}>Add {shortfall} Round{shortfall>1?"s":""} & Regenerate ✦</button>
+            </div>
+          ) : shortfall < 0 ? (
+            <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:16,padding:"14px 16px",border:"1px solid var(--border)"}}>
+              <div style={{fontSize:12,fontWeight:600,color:"var(--text)",marginBottom:4,fontFamily:"'Jost',sans-serif"}}>{totalHands} hands · {g.dates.length} dates — {-shortfall} round{-shortfall>1?"s":""} still open</div>
+              <div style={{fontSize:11,color:"var(--text-soft)",lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>That's fine if more submissions are coming — come back and regenerate after you approve them. Applying now leaves the last date{-shortfall>1?"s":""} without a payout.</div>
+            </div>
+          ) : (
+            <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--green-bg)",borderRadius:16,padding:"12px 16px",border:"1px solid var(--green)"}}>
+              <div style={{fontSize:12,fontWeight:600,color:"var(--green)",fontFamily:"'Jost',sans-serif"}}>✓ Perfect fit — {totalHands} hands, {g.dates.length} dates</div>
+            </div>
+          )}
+
           {/* Stats summary */}
-          <div style={{margin:"var(--pad) var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
+          <div style={{margin:"14px var(--pad) 0",background:"var(--surface)",borderRadius:20,padding:20,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",border:"1px solid var(--border)"}}>
             {[[result.assignments.length,"Slots filled"],[g.dates.length - result.assignments.length,"Open slots"],[result.unassigned.length,"Unassigned"]].map(([v,l],i)=>(
               <div key={i} style={i>0?{borderLeft:"1px solid var(--border)",paddingLeft:16}:{}}>
                 <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:700,color:i===2&&v>0?"#E05555":"var(--primary)",lineHeight:1}}>{v}</div>
@@ -2276,15 +2322,24 @@ function OrgGenerate({submissions, goTo, openTheme, showAlert, theme}) {
           {result.unassigned.length > 0 && (
             <div style={{margin:"14px var(--pad) 0",background:"#FFF0F0",borderRadius:16,padding:"14px 16px",border:"1px solid #E05555"}}>
               <div style={{fontSize:12,fontWeight:600,color:"#C03030",marginBottom:6,fontFamily:"'Jost',sans-serif"}}>⚠ {result.unassigned.length} hand{result.unassigned.length>1?"s":""} couldn't be assigned</div>
-              <div style={{fontSize:11,color:"#C03030",lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>There aren't enough open slots. You can add rounds in the Edit screen, or remove submissions and regenerate.</div>
+              <div style={{fontSize:11,color:"#C03030",lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>There aren't enough open slots — use the "Add Rounds & Regenerate" button at the top so everyone fits.</div>
             </div>
           )}
 
-          {/* Apply / back buttons */}
-          <div style={{padding:"24px var(--pad) 0"}}>
-            <button onClick={handleApply} style={{width:"100%",padding:18,background:"var(--header-grad)",color:"white",border:"none",borderRadius:18,fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,cursor:"pointer",boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}>Apply This Schedule ✦</button>
-            <div style={{fontSize:11,color:"var(--text-soft)",textAlign:"center",marginTop:10,lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>This will replace your current member list with the generated assignments. You can still edit individual slots afterward.</div>
-          </div>
+          {/* Apply / back buttons — locked once payments have started */}
+          {paymentsStarted ? (
+            <div style={{padding:"24px var(--pad) 0"}}>
+              <div style={{background:"#FFF0F0",border:"1px solid #E05555",borderRadius:18,padding:"16px 18px"}}>
+                <div style={{fontSize:13,fontWeight:600,color:"#C03030",marginBottom:6,fontFamily:"'Jost',sans-serif"}}>🔒 This Susu is closed — payments have started</div>
+                <div style={{fontSize:11,color:"#C03030",lineHeight:1.6,fontFamily:"'Jost',sans-serif"}}>Applying a new schedule would replace the member list and erase the payment history. To run another cycle, create a new group from the dashboard.</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{padding:"24px var(--pad) 0"}}>
+              <button onClick={handleApply} style={{width:"100%",padding:18,background:"var(--header-grad)",color:"white",border:"none",borderRadius:18,fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,cursor:"pointer",boxShadow:"0 8px 24px rgba(0,0,0,0.15)"}}>Apply This Schedule ✦</button>
+              <div style={{fontSize:11,color:"var(--text-soft)",textAlign:"center",marginTop:10,lineHeight:1.5,fontFamily:"'Jost',sans-serif"}}>This will replace your current member list with the generated assignments. You can still edit individual slots afterward.</div>
+            </div>
+          )}
         </div>
       )}
     </div>
