@@ -2873,7 +2873,7 @@ function MemberApp({theme, changeTheme, showAlert, goToOnboard, memberId, setMem
     return (
       <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center"}}>
         <div style={{width:72,height:72,borderRadius:"50%",background:"var(--header-grad)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,marginBottom:24,boxShadow:"0 8px 32px rgba(0,0,0,0.15)"}}>✦</div>
-        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"var(--text)",marginBottom:8}}>Welcome to<br/><em style={{color:"var(--gold)"}}>{getGroup().name}</em></div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:600,color:"var(--text)",marginBottom:8}}>Welcome to<br/><em style={{color:"var(--gold)"}}>the Susu</em></div>
         <div style={{fontSize:13,color:"var(--text-soft)",lineHeight:1.7,marginBottom:32,fontFamily:"'Jost',sans-serif"}}>Enter your name to access your personal view.</div>
         <div style={{width:"100%",maxWidth:320}}>
           <input value={nameInput} onChange={e=>{setNameInput(e.target.value);setNameError("");}} onKeyDown={e=>e.key==="Enter"&&handleIdentify()} placeholder="Your name" style={{width:"100%",background:"var(--surface)",border:`1px solid ${nameError?"var(--accent)":"var(--border)"}`,borderRadius:12,padding:"13px 16px",fontSize:15,color:"var(--text)",fontFamily:"'Jost',sans-serif",outline:"none",marginBottom:10,textAlign:"center"}}/>
